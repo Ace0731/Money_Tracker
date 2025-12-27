@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
@@ -8,8 +8,6 @@ import {
     PieChart,
     Pie,
     Cell,
-    LineChart,
-    Line,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -154,7 +152,7 @@ export default function Reports() {
                                     label={(entry) => `${entry.category_name}: ${formatCurrency(entry.total)}`}
                                     labelLine={false}
                                 >
-                                    {incomeCategories.map((entry, index) => (
+                                    {incomeCategories.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
@@ -185,7 +183,7 @@ export default function Reports() {
                                     label={(entry) => `${entry.category_name}: ${formatCurrency(entry.total)}`}
                                     labelLine={false}
                                 >
-                                    {expenseCategories.map((entry, index) => (
+                                    {expenseCategories.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>

@@ -11,7 +11,10 @@
     },
     "bundle": {
         "active": true,
-        "targets": "all"
+        "targets": "all",
+        "icon": [
+            "icons/icon.ico"
+        ]
     },
     "app": {
         "windows": [
