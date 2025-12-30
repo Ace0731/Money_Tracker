@@ -4,11 +4,20 @@ use tauri::State;
 use crate::db::DbConnection;
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct AccountBalance {
+    pub id: i64,
+    pub name: String,
+    pub account_type: String,
+    pub balance: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DashboardData {
     pub total_balance: f64,
     pub bank_balance: f64,
     pub cash_balance: f64,
     pub investment_balance: f64,
+    pub individual_accounts: Vec<AccountBalance>,
     pub current_month_income: f64,
     pub current_month_expense: f64,
     pub current_month_net: f64,
@@ -22,18 +31,19 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
     let mut bank_balance = 0.0;
     let mut cash_balance = 0.0;
     let mut investment_balance = 0.0;
+    let mut individual_accounts = Vec::new();
     
     // Get all accounts
     let mut accounts_stmt = conn.prepare(
-        "SELECT id, type, opening_balance FROM accounts"
+        "SELECT id, name, type, opening_balance FROM accounts"
     ).map_err(|e| e.to_string())?;
     
     let accounts_iter = accounts_stmt.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, f64>(2)?))
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, f64>(3)?))
     }).map_err(|e| e.to_string())?;
     
     for account_result in accounts_iter {
-        let (account_id, account_type, opening_balance) = account_result.map_err(|e| e.to_string())?;
+        let (account_id, account_name, account_type, opening_balance) = account_result.map_err(|e| e.to_string())?;
         
         // Get incoming transactions
         let incoming: f64 = conn.query_row(
@@ -51,6 +61,13 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
         
         let current_balance = opening_balance + incoming - outgoing;
         
+        individual_accounts.push(AccountBalance {
+            id: account_id,
+            name: account_name,
+            account_type: account_type.clone(),
+            balance: current_balance,
+        });
+
         match account_type.as_str() {
             "bank" => bank_balance += current_balance,
             "cash" => cash_balance += current_balance,
@@ -83,6 +100,7 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
         bank_balance,
         cash_balance,
         investment_balance,
+        individual_accounts,
         current_month_income,
         current_month_expense,
         current_month_net: current_month_income - current_month_expense,

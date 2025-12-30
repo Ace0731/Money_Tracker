@@ -4,11 +4,19 @@ import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 
+interface AccountBalance {
+    id: number;
+    name: string;
+    account_type: string;
+    balance: number;
+}
+
 interface DashboardData {
     total_balance: number;
     bank_balance: number;
     cash_balance: number;
     investment_balance: number;
+    individual_accounts: AccountBalance[];
     current_month_income: number;
     current_month_expense: number;
     current_month_net: number;
@@ -32,6 +40,15 @@ export default function Dashboard() {
         }
     };
 
+    const getAccountIcon = (type: string) => {
+        switch (type) {
+            case 'bank': return '🏦';
+            case 'cash': return '💵';
+            case 'investment': return '📈';
+            default: return '💰';
+        }
+    };
+
     if (loading || !data) {
         return <div className={darkTheme.loading}>Loading dashboard...</div>;
     }
@@ -42,7 +59,7 @@ export default function Dashboard() {
 
             {/* Total Balance */}
             <div className="mb-6">
-                <div className="card p-8 text-center">
+                <div className="card p-8 text-center text-white bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700">
                     <div className="text-sm text-slate-400 mb-2">Total Balance</div>
                     <div className="text-5xl font-bold text-blue-400">
                         {formatCurrency(data.total_balance)}
@@ -52,7 +69,7 @@ export default function Dashboard() {
 
             {/* Account Balances by Type */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="card p-6 border-l-4 border-blue-500">
+                <div className="card p-6 border-l-4 border-blue-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
                     <div className="flex items-center justify-between">
                         <div>
                             <div className="text-sm text-slate-400">Bank Accounts</div>
@@ -64,7 +81,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="card p-6 border-l-4 border-green-500">
+                <div className="card p-6 border-l-4 border-green-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
                     <div className="flex items-center justify-between">
                         <div>
                             <div className="text-sm text-slate-400">Cash</div>
@@ -76,7 +93,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="card p-6 border-l-4 border-purple-500">
+                <div className="card p-6 border-l-4 border-purple-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
                     <div className="flex items-center justify-between">
                         <div>
                             <div className="text-sm text-slate-400">Investments</div>
@@ -89,23 +106,46 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* Individual Account Balances */}
+            {data.individual_accounts && data.individual_accounts.length > 0 && (
+                <div className="mb-6">
+                    <h2 className="text-xl font-bold mb-4 text-slate-100">Individual Accounts</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {data.individual_accounts.map((account) => (
+                            <div key={account.id} className="card p-4 bg-slate-800 rounded-xl shadow-lg border border-slate-700 hover:border-blue-500 transition-colors cursor-pointer" onClick={() => navigate('/transactions', { state: { accountId: account.id } })}>
+                                <div className="flex items-start justify-between">
+                                    <div className="overflow-hidden">
+                                        <div className="text-xs text-slate-400 uppercase tracking-wider mb-1 opacity-70">{account.account_type}</div>
+                                        <div className="text-base font-semibold text-slate-100 truncate pr-2" title={account.name}>{account.name}</div>
+                                        <div className="text-lg font-bold text-slate-100 mt-2">
+                                            {formatCurrency(account.balance)}
+                                        </div>
+                                    </div>
+                                    <div className="text-2xl opacity-80">{getAccountIcon(account.account_type)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Current Month Summary */}
             <div className="mb-6">
                 <h2 className="text-xl font-bold mb-4 text-slate-100">This Month</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="card p-6">
+                    <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
                         <div className="text-sm text-slate-400">Income</div>
                         <div className="text-2xl font-bold text-green-400 mt-2">
                             {formatCurrency(data.current_month_income)}
                         </div>
                     </div>
-                    <div className="card p-6">
+                    <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
                         <div className="text-sm text-slate-400">Expense</div>
                         <div className="text-2xl font-bold text-red-400 mt-2">
                             {formatCurrency(data.current_month_expense)}
                         </div>
                     </div>
-                    <div className="card p-6">
+                    <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
                         <div className="text-sm text-slate-400">Net</div>
                         <div className={`text-2xl font-bold mt-2 ${data.current_month_net >= 0 ? 'text-green-400' : 'text-red-400'
                             }`}>
@@ -116,33 +156,33 @@ export default function Dashboard() {
             </div>
 
             {/* Quick Actions */}
-            <div className="card p-6">
+            <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
                 <h2 className="text-xl font-bold mb-4 text-slate-100">Quick Actions</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <button
                         onClick={() => navigate('/transactions')}
-                        className="p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-center"
+                        className="p-4 bg-slate-700 hover:bg-white/10 rounded-lg transition-colors text-center border border-slate-600"
                     >
                         <div className="text-2xl mb-2">💳</div>
                         <div className="text-sm text-slate-200">Add Transaction</div>
                     </button>
                     <button
                         onClick={() => navigate('/accounts')}
-                        className="p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-center"
+                        className="p-4 bg-slate-700 hover:bg-white/10 rounded-lg transition-colors text-center border border-slate-600"
                     >
                         <div className="text-2xl mb-2">🏦</div>
                         <div className="text-sm text-slate-200">Manage Accounts</div>
                     </button>
                     <button
                         onClick={() => navigate('/categories')}
-                        className="p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-center"
+                        className="p-4 bg-slate-700 hover:bg-white/10 rounded-lg transition-colors text-center border border-slate-600"
                     >
                         <div className="text-2xl mb-2">📁</div>
                         <div className="text-sm text-slate-200">Categories</div>
                     </button>
                     <button
                         onClick={() => navigate('/reports')}
-                        className="p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-center"
+                        className="p-4 bg-slate-700 hover:bg-white/10 rounded-lg transition-colors text-center border border-slate-600"
                     >
                         <div className="text-2xl mb-2">📊</div>
                         <div className="text-sm text-slate-200">View Reports</div>
@@ -152,7 +192,7 @@ export default function Dashboard() {
 
             {/* Getting Started Guide (only if no data) */}
             {data.total_balance === 0 && data.current_month_income === 0 && data.current_month_expense === 0 && (
-                <div className="card p-6 mt-6 border-2 border-blue-600">
+                <div className="card p-6 mt-6 border-2 border-blue-600 bg-slate-800/50 rounded-xl shadow-lg">
                     <h2 className="text-xl font-bold mb-4 text-slate-100">Getting Started</h2>
                     <div className="space-y-3 text-slate-300">
                         <p>✅ All screens are functional and ready to use</p>
