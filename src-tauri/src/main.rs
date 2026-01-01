@@ -37,6 +37,9 @@ fn main() {
             get_client_summary,
             get_overall_stats,
             get_dashboard_data,
+            get_time_logs,
+            create_time_log,
+            delete_time_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

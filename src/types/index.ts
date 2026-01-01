@@ -25,9 +25,23 @@ export interface Project {
     name: string;
     client_id?: number;
     expected_amount?: number;
+    daily_rate?: number;
     start_date?: string;
     end_date?: string;
     notes?: string;
+    // Computed fields
+    received_amount?: number;
+    spent_amount?: number;
+    logged_hours?: number;
+}
+
+export interface TimeLog {
+    id?: number;
+    project_id: number;
+    date: string;
+    hours: number;
+    task?: string;
+    created_at?: string;
 }
 
 export interface Tag {

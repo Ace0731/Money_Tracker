@@ -33,26 +33,59 @@ pub struct OverallStats {
     pub transaction_count: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReportFilters {
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub client_id: Option<i64>,
+    pub project_id: Option<i64>,
+}
+
+fn apply_filters(query: &mut String, filters: &ReportFilters, params: &mut Vec<rusqlite::types::Value>) {
+    if let Some(start) = &filters.start_date {
+        query.push_str(" AND date >= ?");
+        params.push(start.clone().into());
+    }
+    if let Some(end) = &filters.end_date {
+        query.push_str(" AND date <= ?");
+        params.push(end.clone().into());
+    }
+    if let Some(client_id) = filters.client_id {
+        query.push_str(" AND client_id = ?");
+        params.push(client_id.into());
+    }
+    if let Some(project_id) = filters.project_id {
+        query.push_str(" AND project_id = ?");
+        params.push(project_id.into());
+    }
+}
+
 #[tauri::command]
 pub fn get_monthly_summary(
     db: State<DbConnection>,
     year: i32,
+    filters: ReportFilters,
 ) -> Result<Vec<MonthlySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    let mut stmt = conn.prepare(
-        "SELECT 
+    let mut query = String::from("
+        SELECT 
             strftime('%Y-%m', date) as month,
             SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) as income,
             SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END) as expense
         FROM transactions
-        WHERE strftime('%Y', date) = ?1
-        GROUP BY month
-        ORDER BY month"
-    ).map_err(|e| e.to_string())?;
+        WHERE strftime('%Y', date) = ?
+    ");
+    
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![year.to_string().into()];
+    apply_filters(&mut query, &filters, &mut params_vec);
+    
+    query.push_str(" GROUP BY month ORDER BY month");
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
     
     let summaries = stmt
-        .query_map([year.to_string()], |row| {
+        .query_map(rusqlite::params_from_iter(params_vec), |row| {
             let income: f64 = row.get(1)?;
             let expense: f64 = row.get(2)?;
             Ok(MonthlySummary {
@@ -73,20 +106,26 @@ pub fn get_monthly_summary(
 pub fn get_category_summary(
     db: State<DbConnection>,
     direction: String,
+    filters: ReportFilters,
 ) -> Result<Vec<CategorySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    let mut stmt = conn.prepare(
-        "SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
+    let mut query = String::from("
+        SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
-        WHERE t.direction = ?1
-        GROUP BY c.name
-        ORDER BY total DESC"
-    ).map_err(|e| e.to_string())?;
+        WHERE t.direction = ?
+    ");
+    
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![direction.into()];
+    apply_filters(&mut query, &filters, &mut params_vec);
+    
+    query.push_str(" GROUP BY c.name ORDER BY total DESC");
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
     
     let summaries = stmt
-        .query_map([direction], |row| {
+        .query_map(rusqlite::params_from_iter(params_vec), |row| {
             Ok(CategorySummary {
                 category_name: row.get(0)?,
                 total: row.get(1)?,
@@ -101,20 +140,25 @@ pub fn get_category_summary(
 }
 
 #[tauri::command]
-pub fn get_client_summary(db: State<DbConnection>) -> Result<Vec<ClientSummary>, String> {
+pub fn get_client_summary(db: State<DbConnection>, filters: ReportFilters) -> Result<Vec<ClientSummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    let mut stmt = conn.prepare(
-        "SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
+    let mut query = String::from("
+        SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
         FROM transactions t
         JOIN clients c ON t.client_id = c.id
         WHERE t.direction = 'income' AND t.client_id IS NOT NULL
-        GROUP BY c.name
-        ORDER BY total DESC"
-    ).map_err(|e| e.to_string())?;
+    ");
+    
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![];
+    apply_filters(&mut query, &filters, &mut params_vec);
+    
+    query.push_str(" GROUP BY c.name ORDER BY total DESC");
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
     
     let summaries = stmt
-        .query_map([], |row| {
+        .query_map(rusqlite::params_from_iter(params_vec), |row| {
             Ok(ClientSummary {
                 client_name: row.get(0)?,
                 total_income: row.get(1)?,
@@ -129,25 +173,31 @@ pub fn get_client_summary(db: State<DbConnection>) -> Result<Vec<ClientSummary>,
 }
 
 #[tauri::command]
-pub fn get_overall_stats(db: State<DbConnection>) -> Result<OverallStats, String> {
+pub fn get_overall_stats(db: State<DbConnection>, filters: ReportFilters) -> Result<OverallStats, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    let mut stmt = conn.prepare(
-        "SELECT 
+    let mut query = String::from("
+        SELECT 
             SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) as total_income,
             SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END) as total_expense,
             COUNT(*) as transaction_count
-        FROM transactions"
-    ).map_err(|e| e.to_string())?;
+        FROM transactions
+        WHERE 1=1
+    ");
     
-    let stats = stmt.query_row([], |row| {
-        let income: f64 = row.get(0)?;
-        let expense: f64 = row.get(1)?;
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![];
+    apply_filters(&mut query, &filters, &mut params_vec);
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    
+    let stats = stmt.query_row(rusqlite::params_from_iter(params_vec), |row| {
+        let income: f64 = row.get(0).unwrap_or(0.0);
+        let expense: f64 = row.get(1).unwrap_or(0.0);
         Ok(OverallStats {
             total_income: income,
             total_expense: expense,
             net_balance: income - expense,
-            transaction_count: row.get(2)?,
+            transaction_count: row.get(2).unwrap_or(0),
         })
     }).map_err(|e| e.to_string())?;
     

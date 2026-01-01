@@ -37,8 +37,8 @@ export default function Layout({ children }: LayoutProps) {
                                 key={item.name}
                                 to={item.path}
                                 className={`flex items-center gap-3 px-4 py-3 rounded-lg mb-2 transition-all ${isActive
-                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/50'
-                                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/50'
+                                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                                     }`}
                             >
                                 <span className="text-xl">{item.icon}</span>
@@ -50,7 +50,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 <div className="p-4 border-t border-slate-700">
                     <div className="text-xs text-slate-500 text-center">
-                        v1.0.0 • Local Only
+                        v1.1.0 • Local Only
                     </div>
                 </div>
             </div>

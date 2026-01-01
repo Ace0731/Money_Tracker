@@ -22,6 +22,24 @@ pub fn initialize_database() -> Result<DbConnection> {
     // Read and execute schema
     let schema = include_str!("../../../database/schema.sql");
     conn.execute_batch(schema)?;
+
+    // Safe migrations for updates
+    // 1. Add daily_rate to projects if it doesn't exist
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN daily_rate REAL DEFAULT 0.0", []);
+
+    // 2. Create time_logs table if it doesn't exist
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS time_logs (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            hours REAL NOT NULL,
+            task TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+        )",
+        [],
+    )?;
     
     Ok(DbConnection(Mutex::new(conn)))
 }
