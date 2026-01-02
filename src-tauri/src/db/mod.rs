@@ -40,6 +40,67 @@ pub fn initialize_database() -> Result<DbConnection> {
         )",
         [],
     )?;
+
+    // 3. Create investments table if it doesn't exist
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS investments (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            account_id INTEGER NOT NULL,
+            units REAL,
+            avg_buy_price REAL,
+            current_price REAL,
+            principal_amount REAL,
+            interest_rate REAL,
+            maturity_date DATE,
+            maturity_amount REAL,
+            monthly_deposit REAL,
+            notes TEXT,
+            provider_symbol TEXT,
+            last_updated_at DATETIME,
+            principal_charges REAL DEFAULT 0.0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (account_id) REFERENCES accounts(id)
+        )",
+        [],
+    )?;
+
+    // 4. Add investment_id to transactions if it doesn't exist
+    let _ = conn.execute("ALTER TABLE transactions ADD COLUMN investment_id INTEGER REFERENCES investments(id)", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_investment ON transactions(investment_id)", []);
+    
+    // 5. Add provider_symbol and last_updated_at to investments
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN provider_symbol TEXT", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN last_updated_at DATETIME", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN principal_charges REAL DEFAULT 0.0", []);
+    
+    // 6. Create investment_lots
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS investment_lots (
+            id INTEGER PRIMARY KEY,
+            investment_id INTEGER NOT NULL,
+            quantity REAL NOT NULL,
+            price_per_unit REAL NOT NULL,
+            charges REAL DEFAULT 0.0,
+            date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            lot_type TEXT DEFAULT 'buy',
+            FOREIGN KEY (investment_id) REFERENCES investments(id)
+        )",
+        [],
+    );
+    
+    // 7. Seed initial lots from old investment data (only if lots are empty)
+    let lot_count: i64 = conn.query_row("SELECT COUNT(*) FROM investment_lots", [], |r| r.get(0)).unwrap_or(0);
+    if lot_count == 0 {
+        let _ = conn.execute(
+            "INSERT INTO investment_lots (investment_id, quantity, price_per_unit, charges, date)
+             SELECT id, units, avg_buy_price, principal_charges, created_at 
+             FROM investments 
+             WHERE units > 0 AND avg_buy_price > 0",
+            [],
+        );
+    }
     
     Ok(DbConnection(Mutex::new(conn)))
 }

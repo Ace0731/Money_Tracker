@@ -13,6 +13,8 @@ export interface TransactionWithDetails {
     client_name?: string;
     project_id?: number;
     project_name?: string;
+    investment_id?: number;
+    investment_name?: string;
     notes?: string;
     tags: string[];
 }

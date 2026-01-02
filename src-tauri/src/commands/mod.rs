@@ -6,6 +6,7 @@ pub mod tags;
 pub mod transactions;
 pub mod reports;
 pub mod dashboard;
+pub mod investments;
 
 pub use accounts::*;
 pub use categories::*;
@@ -15,3 +16,4 @@ pub use tags::*;
 pub use transactions::*;
 pub use reports::*;
 pub use dashboard::*;
+pub use investments::*;

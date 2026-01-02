@@ -1,6 +1,6 @@
 [package]
 name = "money-tracker"
-version = "0.1.0"
+version = "1.2.0"
 description = "A local-only personal money tracker"
 authors = ["you"]
 edition = "2021"
@@ -15,6 +15,7 @@ serde_json = "1"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 chrono = "0.4"
 dirs = "5.0"
+reqwest = { version = "0.12", features = ["json"] }
 
 [features]
 default = ["custom-protocol"]

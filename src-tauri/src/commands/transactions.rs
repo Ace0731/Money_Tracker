@@ -14,6 +14,7 @@ pub struct Transaction {
     pub category_id: i64,
     pub client_id: Option<i64>,
     pub project_id: Option<i64>,
+    pub investment_id: Option<i64>,
     pub notes: Option<String>,
 }
 
@@ -33,6 +34,8 @@ pub struct TransactionWithDetails {
     pub client_name: Option<String>,
     pub project_id: Option<i64>,
     pub project_name: Option<String>,
+    pub investment_id: Option<i64>,
+    pub investment_name: Option<String>,
     pub notes: Option<String>,
     pub tags: Vec<String>,
 }
@@ -59,6 +62,7 @@ pub fn get_transactions(
             t.category_id, c.name as category_name,
             t.client_id, cl.name as client_name,
             t.project_id, p.name as project_name,
+            t.investment_id, i.name as investment_name,
             t.notes
         FROM transactions t
         LEFT JOIN accounts fa ON t.from_account_id = fa.id
@@ -66,6 +70,7 @@ pub fn get_transactions(
         LEFT JOIN categories c ON t.category_id = c.id
         LEFT JOIN clients cl ON t.client_id = cl.id
         LEFT JOIN projects p ON t.project_id = p.id
+        LEFT JOIN investments i ON t.investment_id = i.id
         WHERE 1=1"
     );
     
@@ -103,7 +108,9 @@ pub fn get_transactions(
                 client_name: row.get(11)?,
                 project_id: row.get(12)?,
                 project_name: row.get(13)?,
-                notes: row.get(14)?,
+                investment_id: row.get(14)?,
+                investment_name: row.get(15)?,
+                notes: row.get(16)?,
                 tags: Vec::new(), // Will be populated separately
             })
         })
@@ -138,8 +145,8 @@ pub fn create_transaction(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO transactions (date, amount, direction, from_account_id, to_account_id, category_id, client_id, project_id, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO transactions (date, amount, direction, from_account_id, to_account_id, category_id, client_id, project_id, investment_id, notes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             transaction.date,
             transaction.amount,
@@ -149,6 +156,7 @@ pub fn create_transaction(
             transaction.category_id,
             transaction.client_id,
             transaction.project_id,
+            transaction.investment_id,
             transaction.notes,
         ],
     )
@@ -180,8 +188,8 @@ pub fn update_transaction(
     
     conn.execute(
         "UPDATE transactions SET date = ?1, amount = ?2, direction = ?3, from_account_id = ?4, 
-         to_account_id = ?5, category_id = ?6, client_id = ?7, project_id = ?8, notes = ?9 
-         WHERE id = ?10",
+         to_account_id = ?5, category_id = ?6, client_id = ?7, project_id = ?8, investment_id = ?9, notes = ?10 
+         WHERE id = ?11",
         params![
             transaction.date,
             transaction.amount,
@@ -191,6 +199,7 @@ pub fn update_transaction(
             transaction.category_id,
             transaction.client_id,
             transaction.project_id,
+            transaction.investment_id,
             transaction.notes,
             id,
         ],

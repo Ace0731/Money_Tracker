@@ -40,6 +40,16 @@ fn main() {
             get_time_logs,
             create_time_log,
             delete_time_log,
+            get_investments,
+            get_investments_summary,
+            create_investment,
+            update_investment,
+            delete_investment,
+            get_investment_platform_summary,
+            sync_investment_prices,
+            add_investment_lot,
+            delete_investment_lot,
+            get_live_market_price,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

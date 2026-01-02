@@ -10,6 +10,16 @@ export const formatCurrency = (amount: number): string => {
 };
 
 /**
+ * Format quantity or price with up to 6 decimal places
+ */
+export const formatUnits = (amount: number, decimals: number = 6): string => {
+    return new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: decimals,
+    }).format(amount);
+};
+
+/**
  * Format date to DD/MM/YYYY
  */
 export const formatDate = (dateString: string): string => {

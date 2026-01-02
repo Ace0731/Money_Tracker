@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Transaction, Account, Category, Client, Project, Tag } from '../types';
+import type { Transaction, Account, Category, Client, Project, Tag, Investment } from '../types';
 import type { TransactionWithDetails } from '../types/transactions';
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
+import Swal from 'sweetalert2';
 
 export default function Transactions() {
     const { execute, loading } = useDatabase();
@@ -22,6 +23,7 @@ export default function Transactions() {
     const [clients, setClients] = useState<Client[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [tags, setTags] = useState<Tag[]>([]);
+    const [investments, setInvestments] = useState<Investment[]>([]);
 
     // Form state
     const [formData, setFormData] = useState<Transaction>({
@@ -33,6 +35,7 @@ export default function Transactions() {
         category_id: 0,
         client_id: undefined,
         project_id: undefined,
+        investment_id: undefined,
         notes: '',
     });
     const [selectedTags, setSelectedTags] = useState<number[]>([]);
@@ -72,18 +75,20 @@ export default function Transactions() {
 
     const loadReferenceData = async () => {
         try {
-            const [accountsData, categoriesData, clientsData, projectsData, tagsData] = await Promise.all([
+            const [accountsData, categoriesData, clientsData, projectsData, tagsData, investmentsData] = await Promise.all([
                 execute<Account[]>('get_accounts'),
                 execute<Category[]>('get_categories'),
                 execute<Client[]>('get_clients'),
                 execute<Project[]>('get_projects'),
                 execute<Tag[]>('get_tags'),
+                execute<Investment[]>('get_investments'),
             ]);
             setAccounts(accountsData);
             setCategories(categoriesData);
             setClients(clientsData);
             setProjects(projectsData);
             setTags(tagsData);
+            setInvestments(investmentsData);
         } catch (error) {
             console.error('Failed to load reference data:', error);
         }
@@ -102,7 +107,13 @@ export default function Transactions() {
             resetForm();
         } catch (error) {
             console.error('Failed to save transaction:', error);
-            alert('Failed to save transaction: ' + error);
+            Swal.fire({
+                title: 'Error',
+                text: 'Failed to save transaction: ' + (error as any),
+                icon: 'error',
+                background: '#1e293b',
+                color: '#f1f5f9'
+            });
         }
     };
 
@@ -119,6 +130,7 @@ export default function Transactions() {
             category_id: transaction.category_id,
             client_id: transaction.client_id,
             project_id: transaction.project_id,
+            investment_id: transaction.investment_id,
             notes: transaction.notes,
         });
         setSelectedTags(tagIds);
@@ -135,6 +147,7 @@ export default function Transactions() {
             category_id: 0,
             client_id: undefined,
             project_id: undefined,
+            investment_id: undefined,
             notes: '',
         });
         setSelectedTags([]);
@@ -245,6 +258,7 @@ export default function Transactions() {
                                 <td className={darkTheme.tableCell}>
                                     {transaction.client_name && <div className="text-blue-400">{transaction.client_name}</div>}
                                     {transaction.project_name && <div className="text-sm text-slate-500">{transaction.project_name}</div>}
+                                    {transaction.investment_name && <div className="text-xs text-purple-400">🔗 {transaction.investment_name}</div>}
                                 </td>
                                 <td className={darkTheme.tableCell}>
                                     <div className="flex flex-wrap gap-1">
@@ -398,7 +412,7 @@ export default function Transactions() {
                                     </select>
                                 </div>
 
-                                {formData.client_id && (
+                                {formData.client_id ? (
                                     <div>
                                         <label className={darkTheme.label}>Project (Optional)</label>
                                         <select
@@ -409,6 +423,20 @@ export default function Transactions() {
                                             <option value="">None</option>
                                             {filteredProjects.map((project) => (
                                                 <option key={project.id} value={project.id}>{project.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label className={darkTheme.label}>Link to Investment (Optional)</label>
+                                        <select
+                                            value={formData.investment_id || ''}
+                                            onChange={(e) => setFormData({ ...formData, investment_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                            className={darkTheme.select}
+                                        >
+                                            <option value="">None</option>
+                                            {investments.map((inv) => (
+                                                <option key={inv.id} value={inv.id}>{inv.name} ({inv.investment_type})</option>
                                             ))}
                                         </select>
                                     </div>

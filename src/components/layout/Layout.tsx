@@ -8,6 +8,7 @@ const navigation = [
     { name: 'Categories', path: '/categories', icon: '📁' },
     { name: 'Clients', path: '/clients', icon: '👥' },
     { name: 'Projects', path: '/projects', icon: '📋' },
+    { name: 'Investments', path: '/investments', icon: '💰' },
     { name: 'Reports', path: '/reports', icon: '📈' },
 ];
 

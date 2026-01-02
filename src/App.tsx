@@ -8,6 +8,7 @@ import Categories from './screens/Categories';
 import Clients from './screens/Clients';
 import Projects from './screens/Projects';
 import Reports from './screens/Reports';
+import Investments from './screens/Investments';
 
 function App() {
     useEffect(() => {
@@ -25,6 +26,7 @@ function App() {
                     <Route path="/categories" element={<Categories />} />
                     <Route path="/clients" element={<Clients />} />
                     <Route path="/projects" element={<Projects />} />
+                    <Route path="/investments" element={<Investments />} />
                     <Route path="/reports" element={<Reports />} />
                 </Routes>
             </Layout>

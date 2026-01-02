@@ -8,6 +8,29 @@ CREATE TABLE IF NOT EXISTS accounts (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS investments (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT CHECK(type IN ('stock', 'mf', 'fd', 'rd')) NOT NULL,
+  account_id INTEGER NOT NULL,
+  
+  -- Stocks/MF specific
+  units REAL,
+  avg_buy_price REAL,
+  current_price REAL,
+  
+  -- FD/RD specific
+  principal_amount REAL,
+  interest_rate REAL,
+  maturity_date DATE,
+  maturity_amount REAL,
+  monthly_deposit REAL,
+  
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
 -- CATEGORIES
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY,
@@ -55,6 +78,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   category_id INTEGER NOT NULL,
   client_id INTEGER,
   project_id INTEGER,
+  investment_id INTEGER,
 
   notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -63,7 +87,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   FOREIGN KEY (to_account_id) REFERENCES accounts(id),
   FOREIGN KEY (category_id) REFERENCES categories(id),
   FOREIGN KEY (client_id) REFERENCES clients(id),
-  FOREIGN KEY (project_id) REFERENCES projects(id)
+  FOREIGN KEY (project_id) REFERENCES projects(id),
+  FOREIGN KEY (investment_id) REFERENCES investments(id)
 );
 
 -- TRANSACTION TAGS (MANY-TO-MANY)

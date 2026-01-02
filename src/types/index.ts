@@ -6,6 +6,60 @@ export interface Account {
     notes?: string;
 }
 
+export interface InvestmentLot {
+    id?: number;
+    investment_id: number;
+    quantity: number;
+    price_per_unit: number;
+    charges: number;
+    date: string;
+    lot_type: 'buy' | 'sell';
+}
+
+export interface Investment {
+    id?: number;
+    name: string;
+    investment_type: 'stock' | 'mf' | 'fd' | 'rd';
+    account_id: number;
+
+    // Stocks/MF specific
+    units?: number;
+    avg_buy_price?: number;
+    current_price?: number;
+
+    // FD/RD specific
+    principal_amount?: number;
+    interest_rate?: number;
+    maturity_date?: string;
+    maturity_amount?: number;
+    monthly_deposit?: number;
+
+    notes?: string;
+    provider_symbol?: string;
+    last_updated_at?: string;
+    principal_charges?: number;
+    created_at?: string;
+}
+
+export interface InvestmentSummary {
+    investment: Investment;
+    account_name: string;
+    lots: InvestmentLot[];
+    total_units: number;
+    avg_buy_price: number;
+    total_invested: number;
+    total_expenses: number;
+    current_valuation: number;
+    net_gain: number;
+    gain_percentage: number;
+}
+
+export interface PlatformBalance {
+    account_id: number;
+    name: string;
+    balance: number;
+}
+
 export interface Category {
     id?: number;
     name: string;
@@ -59,8 +113,17 @@ export interface Transaction {
     category_id: number;
     client_id?: number;
     project_id?: number;
+    investment_id?: number;
+    // Details
+    from_account_name?: string;
+    to_account_name?: string;
+    category_name?: string;
+    client_name?: string;
+    project_name?: string;
+    investment_name?: string;
     notes?: string;
     created_at?: string;
+    tags?: string[];
 }
 
 export interface TransactionFilters {
