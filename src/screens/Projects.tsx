@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Project, Client } from '../types';
+import type { Project, Client, TimeLog } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 
@@ -24,6 +24,9 @@ export default function Projects() {
     // Time Log State
     const [showTimeLog, setShowTimeLog] = useState(false);
     const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>();
+    const [showViewLogs, setShowViewLogs] = useState(false);
+    const [viewLogsProjectId, setViewLogsProjectId] = useState<number | undefined>();
+    const [projectTimeLogs, setProjectTimeLogs] = useState<Record<number, TimeLog[]>>({});
     const [timeLogData, setTimeLogData] = useState({
         hours: 8,
         task: '',
@@ -105,6 +108,25 @@ export default function Projects() {
             });
         } catch (error) {
             console.error('Failed to log time:', error);
+        }
+    };
+
+    const loadTimeLogs = async (projectId: number) => {
+        try {
+            console.log('Loading time logs for project:', projectId);
+            const logs = await execute<TimeLog[]>('get_time_logs', { projectId: projectId });
+            console.log('Received time logs:', logs);
+            setProjectTimeLogs(prev => ({ ...prev, [projectId]: logs }));
+        } catch (error) {
+            console.error('Failed to load time logs:', error);
+        }
+    };
+
+    const openTimeLogs = async (projectId: number) => {
+        setViewLogsProjectId(projectId);
+        setShowViewLogs(true);
+        if (!projectTimeLogs[projectId]) {
+            await loadTimeLogs(projectId);
         }
     };
 
@@ -214,6 +236,12 @@ export default function Projects() {
                                 className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-bold rounded transition-colors border border-blue-600/30"
                             >
                                 ⏱️ Log Time
+                            </button>
+                            <button
+                                onClick={() => openTimeLogs(project.id!)}
+                                className="flex-1 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded transition-colors border border-slate-600"
+                            >
+                                📋 View Logs
                             </button>
                         </div>
                     </div>
@@ -383,6 +411,54 @@ export default function Projects() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* View Time Logs Modal */}
+            {showViewLogs && viewLogsProjectId && (
+                <div className={darkTheme.modalOverlay}>
+                    <div className={darkTheme.modalContentLarge}>
+                        <h2 className={darkTheme.modalTitle}>
+                            Time Log History - {projects.find(p => p.id === viewLogsProjectId)?.name}
+                        </h2>
+
+                        <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                            {projectTimeLogs[viewLogsProjectId]?.length > 0 ? (
+                                projectTimeLogs[viewLogsProjectId].map((log) => (
+                                    <div key={log.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div>
+                                                <span className="text-sm font-mono text-blue-400">{log.date}</span>
+                                                {log.created_at && (
+                                                    <p className="text-[10px] text-slate-500 mt-1">
+                                                        Logged: {new Date(log.created_at).toLocaleString()}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <span className="text-lg font-bold text-green-400">{log.hours}h</span>
+                                        </div>
+                                        {log.task && (
+                                            <p className="text-sm text-slate-300 bg-slate-900/50 p-2 rounded">{log.task}</p>
+                                        )}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-slate-500 italic mb-2">No time logs yet.</p>
+                                    <p className="text-xs text-slate-600">Click "Log Time" to add your first entry.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-700">
+                            <button
+                                onClick={() => setShowViewLogs(false)}
+                                className={darkTheme.btnCancel}
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

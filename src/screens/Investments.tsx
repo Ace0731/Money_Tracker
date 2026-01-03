@@ -13,11 +13,12 @@ export default function Investments() {
     const [summaries, setSummaries] = useState<InvestmentSummary[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [platformBalances, setPlatformBalances] = useState<PlatformBalance[]>([]);
-    const [expandedIds, setExpandedIds] = useState<number[]>([]);
     const [showLotForm, setShowLotForm] = useState(false);
     const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd'>('all');
     const [timePeriod, setTimePeriod] = useState<'all' | 'today' | 'month' | 'year'>('all');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [showViewLots, setShowViewLots] = useState(false);
+    const [viewLotsSummary, setViewLotsSummary] = useState<InvestmentSummary | null>(null);
     const [lotFormData, setLotFormData] = useState<InvestmentLot>({
         investment_id: 0,
         quantity: 0,
@@ -83,6 +84,11 @@ export default function Investments() {
     const handleEdit = (inv: Investment) => {
         setFormData(inv);
         setShowForm(true);
+    };
+
+    const openLotsModal = (summary: InvestmentSummary) => {
+        setViewLotsSummary(summary);
+        setShowViewLots(true);
     };
 
     const handleDelete = async (id: number) => {
@@ -199,12 +205,6 @@ export default function Investments() {
         } catch (error) {
             console.error('Failed to sync prices:', error);
         }
-    };
-
-    const toggleExpand = (id: number) => {
-        setExpandedIds(prev =>
-            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-        );
     };
 
     const handleAddLot = (invId: number, type?: string) => {
@@ -517,106 +517,50 @@ export default function Investments() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {filteredSummaries
                                 .filter(s => ['stock', 'mf'].includes(s.investment.investment_type))
-                                .map((s) => {
-                                    const isExpanded = expandedIds.includes(s.investment.id!);
-                                    return (
-                                        <div key={s.investment.id} className={darkTheme.card + " overflow-hidden"}>
-                                            <div
-                                                className="p-4 cursor-pointer hover:bg-slate-800/30 transition-colors"
-                                                onClick={() => toggleExpand(s.investment.id!)}
-                                            >
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div>
-                                                        <h3 className="font-bold text-slate-100 text-lg flex items-center gap-2">
-                                                            {s.investment.name}
-                                                            <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">
-                                                                {isExpanded ? '▼' : '▶'}
-                                                            </span>
-                                                        </h3>
-                                                        <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                            {s.investment.investment_type} • {s.account_name}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                                                        <button onClick={() => handleAddLot(s.investment.id!)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Buy</button>
-                                                        <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
-                                                        <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
+                                .map((s) => (
+                                    <div key={s.investment.id} className={darkTheme.card + " overflow-hidden"}>
+                                        <div
+                                            className="p-4 cursor-pointer hover:bg-slate-800/30 transition-colors"
+                                            onClick={() => openLotsModal(s)}
+                                        >
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h3 className="font-bold text-slate-100 text-lg flex items-center gap-2">
+                                                        {s.investment.name}
+                                                        <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">
+                                                            📋 View Lots
+                                                        </span>
+                                                    </h3>
+                                                    <div className="text-xs text-slate-400 uppercase tracking-wider">
+                                                        {s.investment.investment_type} • {s.account_name}
                                                     </div>
                                                 </div>
-
-                                                <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
-                                                    <div>
-                                                        <div className="text-[10px] text-slate-500 uppercase">Total Value</div>
-                                                        <div className="text-sm font-medium text-slate-100">{formatCurrency(s.current_valuation)}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[10px] text-slate-500 uppercase">Avg Price</div>
-                                                        <div className="text-sm font-medium text-slate-300">{formatUnits(s.avg_buy_price, 6)}</div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-[10px] text-slate-500 uppercase">Returns</div>
-                                                        <div className={`text-sm font-bold ${s.net_gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                            {s.gain_percentage.toFixed(1)}% ({s.net_gain >= 0 ? '+' : ''}{formatCurrency(s.net_gain)})
-                                                        </div>
-                                                    </div>
+                                                <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => handleAddLot(s.investment.id!)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Buy</button>
+                                                    <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
+                                                    <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
                                                 </div>
                                             </div>
 
-                                            {isExpanded && (
-                                                <div className="bg-slate-900/50 border-t border-slate-700/50 p-4">
-                                                    <div className="flex justify-between items-center mb-2">
-                                                        <h4 className="text-xs font-bold text-slate-400 uppercase">Individual Lots</h4>
-                                                        <div className="text-[10px] text-slate-500">
-                                                            CMP: <span className="text-slate-200">{formatUnits(s.investment.current_price || 0, 6)}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="overflow-x-auto">
-                                                        <table className="w-full text-[11px] text-left text-slate-300">
-                                                            <thead className="text-slate-500 uppercase text-[9px] border-b border-slate-800">
-                                                                <tr>
-                                                                    <th className="py-2">Date</th>
-                                                                    <th className="py-2 text-right">Qty</th>
-                                                                    <th className="py-2 text-right">Price</th>
-                                                                    <th className="py-2 text-right">Charges</th>
-                                                                    <th className="py-2 text-right">Gain</th>
-                                                                    <th className="py-2 text-right"></th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {s.lots.map(lot => {
-                                                                    const lotCost = lot.quantity * lot.price_per_unit + lot.charges;
-                                                                    const lotValue = lot.quantity * (s.investment.current_price || 0);
-                                                                    const lotGain = lotValue - lotCost;
-                                                                    return (
-                                                                        <tr key={lot.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
-                                                                            <td className="py-2">{lot.date.split(' ')[0]}</td>
-                                                                            <td className="py-2 text-right font-medium">{formatUnits(lot.quantity, 6)}</td>
-                                                                            <td className="py-2 text-right">{formatUnits(lot.price_per_unit, 6)}</td>
-                                                                            <td className="py-2 text-right text-slate-500">{formatCurrency(lot.charges)}</td>
-                                                                            <td className={`py-2 text-right font-bold ${lotGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                                                {lotGain >= 0 ? '+' : ''}{formatCurrency(lotGain)}
-                                                                            </td>
-                                                                            <td className="py-2 text-right">
-                                                                                <button onClick={() => handleDeleteLot(lot.id!)} className="text-slate-600 hover:text-red-400 ml-2">×</button>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                    <div className="mt-3 flex justify-between text-[10px] text-slate-500 pt-3 border-t border-slate-800">
-                                                        <span>Total Units: {formatUnits(s.total_units, 6)}</span>
-                                                        <span>Invested: {formatCurrency(s.total_invested)}</span>
-                                                        {s.investment.last_updated_at && (
-                                                            <span className="italic">Sync: {s.investment.last_updated_at}</span>
-                                                        )}
+                                            <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
+                                                <div>
+                                                    <div className="text-[10px] text-slate-500 uppercase">Total Value</div>
+                                                    <div className="text-sm font-medium text-slate-100">{formatCurrency(s.current_valuation)}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] text-slate-500 uppercase">Avg Price</div>
+                                                    <div className="text-sm font-medium text-slate-300">{formatUnits(s.avg_buy_price, 6)}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-[10px] text-slate-500 uppercase">Returns</div>
+                                                    <div className={`text-sm font-bold ${s.net_gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                        {s.gain_percentage.toFixed(1)}% ({s.net_gain >= 0 ? '+' : ''}{formatCurrency(s.net_gain)})
                                                     </div>
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                ))}
                         </div>
                     </section>
                 )}
@@ -686,258 +630,347 @@ export default function Investments() {
             </div>
 
             {/* Investment Form Modal */}
-            {showForm && (
-                <div className={darkTheme.modalOverlay}>
-                    <div className={darkTheme.modalContentLarge}>
-                        <h2 className={darkTheme.modalTitle}>
-                            {formData.id ? 'Edit Investment' : 'Add Investment'}
-                        </h2>
+            {
+                showForm && (
+                    <div className={darkTheme.modalOverlay}>
+                        <div className={darkTheme.modalContentLarge}>
+                            <h2 className={darkTheme.modalTitle}>
+                                {formData.id ? 'Edit Investment' : 'Add Investment'}
+                            </h2>
 
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={darkTheme.label}>Name *</label>
-                                    <input
-                                        type="text" required
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        className={darkTheme.input}
-                                        placeholder="e.g., Nifty 50 Index Fund"
-                                    />
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={darkTheme.label}>Name *</label>
+                                        <input
+                                            type="text" required
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            className={darkTheme.input}
+                                            placeholder="e.g., Nifty 50 Index Fund"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className={darkTheme.label}>Type *</label>
+                                        <select
+                                            value={formData.investment_type}
+                                            onChange={(e) => setFormData({ ...formData, investment_type: e.target.value as any })}
+                                            className={darkTheme.select}
+                                        >
+                                            <option value="stock">Stock</option>
+                                            <option value="mf">Mutual Fund</option>
+                                            <option value="fd">Fixed Deposit</option>
+                                            <option value="rd">Recurring Deposit</option>
+                                        </select>
+                                    </div>
                                 </div>
+
                                 <div>
-                                    <label className={darkTheme.label}>Type *</label>
+                                    <label className={darkTheme.label}>Platform / Account *</label>
                                     <select
-                                        value={formData.investment_type}
-                                        onChange={(e) => setFormData({ ...formData, investment_type: e.target.value as any })}
+                                        required
+                                        value={formData.account_id}
+                                        onChange={(e) => setFormData({ ...formData, account_id: parseInt(e.target.value) })}
                                         className={darkTheme.select}
                                     >
-                                        <option value="stock">Stock</option>
-                                        <option value="mf">Mutual Fund</option>
-                                        <option value="fd">Fixed Deposit</option>
-                                        <option value="rd">Recurring Deposit</option>
+                                        <option value="">Select Platform</option>
+                                        {accounts.map(acc => (
+                                            <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                        ))}
                                     </select>
                                 </div>
-                            </div>
 
-                            <div>
-                                <label className={darkTheme.label}>Platform / Account *</label>
-                                <select
-                                    required
-                                    value={formData.account_id}
-                                    onChange={(e) => setFormData({ ...formData, account_id: parseInt(e.target.value) })}
-                                    className={darkTheme.select}
-                                >
-                                    <option value="">Select Platform</option>
-                                    {accounts.map(acc => (
-                                        <option key={acc.id} value={acc.id}>{acc.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {(formData.investment_type === 'stock' || formData.investment_type === 'mf') && (
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className={darkTheme.label}>Market Symbol</label>
-                                            <input
-                                                type="text"
-                                                value={formData.provider_symbol || ''}
-                                                onChange={(e) => setFormData({ ...formData, provider_symbol: e.target.value })}
-                                                className={darkTheme.input}
-                                                placeholder={formData.investment_type === 'stock' ? 'e.g. RELIANCE.NS or RELIANCE.BO' : 'e.g. 120505'}
-                                            />
+                                {(formData.investment_type === 'stock' || formData.investment_type === 'mf') && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>Market Symbol</label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.provider_symbol || ''}
+                                                    onChange={(e) => setFormData({ ...formData, provider_symbol: e.target.value })}
+                                                    className={darkTheme.input}
+                                                    placeholder={formData.investment_type === 'stock' ? 'e.g. RELIANCE.NS or RELIANCE.BO' : 'e.g. 120505'}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>Current Market Price</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="number" step="0.000001"
+                                                        value={formData.current_price || ''}
+                                                        onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
+                                                        className={darkTheme.input + " flex-1"}
+                                                        placeholder="Price per unit"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={fetchLivePrice}
+                                                        className="px-3 bg-slate-800 rounded text-green-400 hover:bg-slate-700"
+                                                        disabled={fetchingPrice || !formData.provider_symbol}
+                                                        title="Fetch Live Price"
+                                                    >
+                                                        {fetchingPrice ? '...' : '⚡'}
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className={darkTheme.label}>Current Market Price</label>
-                                            <div className="flex gap-2">
+
+                                        {formData.id && (
+                                            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
+                                                💡 Units and Buy Price are managed via <b>Lots</b> in the main view.
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {(formData.investment_type === 'fd' || formData.investment_type === 'rd') && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>Interest (%)</label>
+                                                <input
+                                                    type="number" step="0.000001"
+                                                    value={formData.interest_rate || ''}
+                                                    onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder="e.g. 7.5"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>Maturity Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.maturity_date || ''}
+                                                    onChange={(e) => setFormData({ ...formData, maturity_date: e.target.value })}
+                                                    className={darkTheme.input}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>Maturity Amount</label>
+                                                <input
+                                                    type="number" step="0.000001"
+                                                    value={formData.maturity_amount || ''}
+                                                    onChange={(e) => setFormData({ ...formData, maturity_amount: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder="Expected at end"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>Current Value (Override)</label>
                                                 <input
                                                     type="number" step="0.000001"
                                                     value={formData.current_price || ''}
                                                     onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input + " flex-1"}
-                                                    placeholder="Price per unit"
+                                                    className={darkTheme.input}
+                                                    placeholder="Optional market value"
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={fetchLivePrice}
-                                                    className="px-3 bg-slate-800 rounded text-green-400 hover:bg-slate-700"
-                                                    disabled={fetchingPrice || !formData.provider_symbol}
-                                                    title="Fetch Live Price"
-                                                >
-                                                    {fetchingPrice ? '...' : '⚡'}
-                                                </button>
                                             </div>
                                         </div>
-                                    </div>
+                                        {formData.investment_type === 'rd' && (
+                                            <div>
+                                                <label className={darkTheme.label}>Monthly Deposit</label>
+                                                <input
+                                                    type="number" step="0.000001"
+                                                    value={formData.monthly_deposit || ''}
+                                                    onChange={(e) => setFormData({ ...formData, monthly_deposit: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder="Recurring amount"
+                                                />
+                                            </div>
+                                        )}
 
-                                    {formData.id && (
-                                        <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
-                                            💡 Units and Buy Price are managed via <b>Lots</b> in the main view.
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                                        {formData.id && (
+                                            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
+                                                💡 Principal investments are managed via <b>Lots</b>.
+                                            </div>
+                                        )}
+                                    </>
+                                )}
 
-                            {(formData.investment_type === 'fd' || formData.investment_type === 'rd') && (
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className={darkTheme.label}>Interest (%)</label>
-                                            <input
-                                                type="number" step="0.000001"
-                                                value={formData.interest_rate || ''}
-                                                onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder="e.g. 7.5"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className={darkTheme.label}>Maturity Date</label>
-                                            <input
-                                                type="date"
-                                                value={formData.maturity_date || ''}
-                                                onChange={(e) => setFormData({ ...formData, maturity_date: e.target.value })}
-                                                className={darkTheme.input}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className={darkTheme.label}>Maturity Amount</label>
-                                            <input
-                                                type="number" step="0.000001"
-                                                value={formData.maturity_amount || ''}
-                                                onChange={(e) => setFormData({ ...formData, maturity_amount: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder="Expected at end"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className={darkTheme.label}>Current Value (Override)</label>
-                                            <input
-                                                type="number" step="0.000001"
-                                                value={formData.current_price || ''}
-                                                onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder="Optional market value"
-                                            />
-                                        </div>
-                                    </div>
-                                    {formData.investment_type === 'rd' && (
-                                        <div>
-                                            <label className={darkTheme.label}>Monthly Deposit</label>
-                                            <input
-                                                type="number" step="0.000001"
-                                                value={formData.monthly_deposit || ''}
-                                                onChange={(e) => setFormData({ ...formData, monthly_deposit: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder="Recurring amount"
-                                            />
-                                        </div>
-                                    )}
+                                <div>
+                                    <label className={darkTheme.label}>Notes</label>
+                                    <textarea
+                                        value={formData.notes || ''}
+                                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                                        className={darkTheme.textarea}
+                                        rows={2}
+                                    />
+                                </div>
 
-                                    {formData.id && (
-                                        <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
-                                            💡 Principal investments are managed via <b>Lots</b>.
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
-                            <div>
-                                <label className={darkTheme.label}>Notes</label>
-                                <textarea
-                                    value={formData.notes || ''}
-                                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                    className={darkTheme.textarea}
-                                    rows={2}
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>Cancel</button>
-                                <button type="submit" className={darkTheme.btnPrimary}>{formData.id ? 'Update' : 'Create'}</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-            {showLotForm && (
-                <div className={darkTheme.modalOverlay}>
-                    <div className={darkTheme.modalContent}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className={darkTheme.modalTitle}>Record Buy / Lot</h2>
-                            <button onClick={() => setShowLotForm(false)} className="text-slate-400 hover:text-white">✕</button>
+                                <div className="flex justify-end gap-2 pt-4">
+                                    <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>Cancel</button>
+                                    <button type="submit" className={darkTheme.btnPrimary}>{formData.id ? 'Update' : 'Create'}</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleLotSubmit} className="space-y-4">
-                            {(() => {
-                                const inv = summaries.find(s => s.investment.id === lotFormData.investment_id)?.investment;
-                                const isMarket = inv?.investment_type === 'stock' || inv?.investment_type === 'mf';
+                    </div>
+                )
+            }
+            {
+                showLotForm && (
+                    <div className={darkTheme.modalOverlay}>
+                        <div className={darkTheme.modalContent}>
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className={darkTheme.modalTitle}>Record Buy / Lot</h2>
+                                <button onClick={() => setShowLotForm(false)} className="text-slate-400 hover:text-white">✕</button>
+                            </div>
+                            <form onSubmit={handleLotSubmit} className="space-y-4">
+                                {(() => {
+                                    const inv = summaries.find(s => s.investment.id === lotFormData.investment_id)?.investment;
+                                    const isMarket = inv?.investment_type === 'stock' || inv?.investment_type === 'mf';
 
-                                return (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className={darkTheme.label}>{isMarket ? 'Quantity *' : 'Quantity / Multiplier *'}</label>
-                                            <input
-                                                type="number" step="0.000001" required
-                                                value={lotFormData.quantity || ''}
-                                                onChange={(e) => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder={isMarket ? "Units bought" : "Default 1"}
-                                            />
+                                    return (
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>{isMarket ? 'Quantity *' : 'Quantity / Multiplier *'}</label>
+                                                <input
+                                                    type="number" step="0.000001" required
+                                                    value={lotFormData.quantity || ''}
+                                                    onChange={(e) => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder={isMarket ? "Units bought" : "Default 1"}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>{isMarket ? 'Price per Unit *' : 'Principal Amount *'}</label>
+                                                <input
+                                                    type="number" step="0.000001" required
+                                                    value={lotFormData.price_per_unit || ''}
+                                                    onChange={(e) => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder={isMarket ? "Cost per share" : "Invested amount"}
+                                                />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className={darkTheme.label}>{isMarket ? 'Price per Unit *' : 'Principal Amount *'}</label>
-                                            <input
-                                                type="number" step="0.000001" required
-                                                value={lotFormData.price_per_unit || ''}
-                                                onChange={(e) => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })}
-                                                className={darkTheme.input}
-                                                placeholder={isMarket ? "Cost per share" : "Invested amount"}
-                                            />
-                                        </div>
+                                    );
+                                })()}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={darkTheme.label}>Charges / Fees</label>
+                                        <input
+                                            type="number" step="0.000001"
+                                            value={lotFormData.charges || ''}
+                                            onChange={(e) => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })}
+                                            className={darkTheme.input}
+                                            placeholder="Brokerage/Tax"
+                                        />
                                     </div>
-                                );
-                            })()}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={darkTheme.label}>Charges / Fees</label>
-                                    <input
-                                        type="number" step="0.000001"
-                                        value={lotFormData.charges || ''}
-                                        onChange={(e) => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })}
-                                        className={darkTheme.input}
-                                        placeholder="Brokerage/Tax"
-                                    />
+                                    <div>
+                                        <label className={darkTheme.label}>Date</label>
+                                        <input
+                                            type="date" required
+                                            value={lotFormData.date.split(' ')[0]}
+                                            onChange={(e) => setLotFormData({ ...lotFormData, date: e.target.value })}
+                                            className={darkTheme.input}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className={darkTheme.label}>Date</label>
-                                    <input
-                                        type="date" required
-                                        value={lotFormData.date.split(' ')[0]}
-                                        onChange={(e) => setLotFormData({ ...lotFormData, date: e.target.value })}
-                                        className={darkTheme.input}
-                                    />
-                                </div>
-                            </div>
 
-                            <div className="bg-slate-800/30 p-3 rounded text-xs text-slate-400">
-                                <div className="flex justify-between mb-1">
-                                    <span>Subtotal:</span>
-                                    <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0))}</span>
+                                <div className="bg-slate-800/30 p-3 rounded text-xs text-slate-400">
+                                    <div className="flex justify-between mb-1">
+                                        <span>Subtotal:</span>
+                                        <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0))}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold text-slate-200">
+                                        <span>Total Value to Deduct from Cash:</span>
+                                        <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0) + (lotFormData.charges || 0))}</span>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between font-bold text-slate-200">
-                                    <span>Total Value to Deduct from Cash:</span>
-                                    <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0) + (lotFormData.charges || 0))}</span>
-                                </div>
-                            </div>
 
-                            <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowLotForm(false)} className={darkTheme.btnCancel}>Cancel</button>
-                                <button type="submit" className={darkTheme.btnPrimary}>Record Lot</button>
+                                <div className="flex justify-end gap-2 pt-4">
+                                    <button type="button" onClick={() => setShowLotForm(false)} className={darkTheme.btnCancel}>Cancel</button>
+                                    <button type="submit" className={darkTheme.btnPrimary}>Record Lot</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* View Lots Modal */}
+            {showViewLots && viewLotsSummary && (
+                <div className={darkTheme.modalOverlay}>
+                    <div className={darkTheme.modalContentLarge}>
+                        <h2 className={darkTheme.modalTitle}>
+                            Investment Lots - {viewLotsSummary.investment.name}
+                        </h2>
+
+                        <div className="mb-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                    <span className="text-slate-500">Current Price:</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.investment.current_price || 0, 6)}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-500">Total Units:</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.total_units, 6)}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-500">Avg Buy Price:</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.avg_buy_price, 6)}</span>
+                                </div>
                             </div>
-                        </form>
+                        </div>
+
+                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                            {viewLotsSummary.lots.length > 0 ? (
+                                <table className="w-full text-sm text-left text-slate-300">
+                                    <thead className="text-slate-500 uppercase text-xs border-b border-slate-700 sticky top-0 bg-slate-900">
+                                        <tr>
+                                            <th className="py-3 px-2">Date</th>
+                                            <th className="py-3 px-2 text-right">Quantity</th>
+                                            <th className="py-3 px-2 text-right">Price/Unit</th>
+                                            <th className="py-3 px-2 text-right">Charges</th>
+                                            <th className="py-3 px-2 text-right">Gain/Loss</th>
+                                            <th className="py-3 px-2 text-right"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {viewLotsSummary.lots.map(lot => {
+                                            const lotCost = lot.quantity * lot.price_per_unit + lot.charges;
+                                            const lotValue = lot.quantity * (viewLotsSummary.investment.current_price || 0);
+                                            const lotGain = lotValue - lotCost;
+                                            return (
+                                                <tr key={lot.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                                                    <td className="py-3 px-2 font-mono text-blue-400">{lot.date.split(' ')[0]}</td>
+                                                    <td className="py-3 px-2 text-right font-medium font-mono">{formatUnits(lot.quantity, 6)}</td>
+                                                    <td className="py-3 px-2 text-right font-mono">{formatUnits(lot.price_per_unit, 6)}</td>
+                                                    <td className="py-3 px-2 text-right text-slate-500">{formatCurrency(lot.charges)}</td>
+                                                    <td className={`py-3 px-2 text-right font-bold ${lotGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                        {lotGain >= 0 ? '+' : ''}{formatCurrency(lotGain)}
+                                                    </td>
+                                                    <td className="py-3 px-2 text-right">
+                                                        <button
+                                                            onClick={() => handleDeleteLot(lot.id!)}
+                                                            className="text-slate-600 hover:text-red-400 text-lg"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-slate-500 italic mb-2">No lots recorded yet.</p>
+                                    <p className="text-xs text-slate-600">Click "+ Buy" to add your first lot.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-700">
+                            <button
+                                onClick={() => setShowViewLots(false)}
+                                className={darkTheme.btnCancel}
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
