@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
 import type { Transaction, Account, Category, Client, Project, Tag, Investment } from '../types';
-import type { TransactionWithDetails } from '../types/transactions';
+import type { TransactionWithDetails, TransactionBalances } from '../types/transactions';
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
@@ -9,6 +9,12 @@ import Swal from 'sweetalert2';
 export default function Transactions() {
     const { execute, loading } = useDatabase();
     const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
+    const [balances, setBalances] = useState<TransactionBalances>({
+        accounts: [],
+        total_opening_balance: 0,
+        total_current_balance: 0
+    });
+    const [showBalances, setShowBalances] = useState(false);
     const [showForm, setShowForm] = useState(false);
 
     const [filters, setFilters] = useState({
@@ -60,6 +66,7 @@ export default function Transactions() {
     useEffect(() => {
         if (filters.start_date || filters.end_date || filters.direction) {
             loadTransactions();
+            loadBalances();
         }
         loadReferenceData();
     }, [filters]);
@@ -70,6 +77,15 @@ export default function Transactions() {
             setTransactions(data);
         } catch (error) {
             console.error('Failed to load transactions:', error);
+        }
+    };
+
+    const loadBalances = async () => {
+        try {
+            const data = await execute<TransactionBalances>('get_transaction_balances', { filters });
+            setBalances(data);
+        } catch (error) {
+            console.error('Failed to load balances:', error);
         }
     };
 
@@ -171,6 +187,100 @@ export default function Transactions() {
                 >
                     Add Transaction
                 </button>
+            </div>
+
+            {/* Balance Table */}
+            <div className={darkTheme.card + " mb-6 overflow-hidden"}>
+                <div
+                    className="p-4 border-b border-slate-700 flex justify-between items-center cursor-pointer hover:bg-slate-700/30 transition-colors"
+                    onClick={() => setShowBalances(!showBalances)}
+                >
+                    <h2 className="text-lg font-semibold text-slate-200">Account Balances</h2>
+                    <div className="flex items-center gap-4">
+                        <div className="text-sm text-slate-400">
+                            Total: <span className="text-green-400 font-semibold">{formatCurrency(balances.total_current_balance)}</span>
+                        </div>
+                        <svg
+                            className={`w-5 h-5 text-slate-400 transition-transform ${showBalances ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
+                {showBalances && (
+                    <div className="overflow-x-auto">
+                        <table className={darkTheme.table}>
+                            <thead className={darkTheme.tableHeader}>
+                                <tr>
+                                    <th className={darkTheme.tableHeaderCell}>Account</th>
+                                    <th className={darkTheme.tableHeaderCell}>Type</th>
+                                    <th className={darkTheme.tableHeaderCell}>Opening Balance</th>
+                                    <th className={darkTheme.tableHeaderCell}>Current Balance</th>
+                                    <th className={darkTheme.tableHeaderCell}>Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {balances.accounts.map((account) => {
+                                    const change = account.current_balance - account.opening_balance;
+                                    return (
+                                        <tr key={account.account_id} className="border-b border-slate-700 hover:bg-slate-700/50">
+                                            <td className={darkTheme.tableCell + " font-medium"}>{account.account_name}</td>
+                                            <td className={darkTheme.tableCell}>
+                                                <span className={
+                                                    account.account_type === 'bank' ? 'text-blue-400' :
+                                                        account.account_type === 'cash' ? 'text-green-400' :
+                                                            'text-purple-400'
+                                                }>
+                                                    {account.account_type}
+                                                </span>
+                                            </td>
+                                            <td className={darkTheme.tableCell + " text-blue-400 font-semibold"}>
+                                                {formatCurrency(account.opening_balance)}
+                                            </td>
+                                            <td className={darkTheme.tableCell + " text-green-400 font-semibold"}>
+                                                {formatCurrency(account.current_balance)}
+                                            </td>
+                                            <td className={darkTheme.tableCell}>
+                                                <span className={change >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                                    {change >= 0 ? '+' : ''}{formatCurrency(change)}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {balances.accounts.length > 0 && (
+                                    <tr className="bg-slate-700/50 font-bold">
+                                        <td className={darkTheme.tableCell} colSpan={2}>Total</td>
+                                        <td className={darkTheme.tableCell + " text-blue-400 text-lg"}>
+                                            {formatCurrency(balances.total_opening_balance)}
+                                        </td>
+                                        <td className={darkTheme.tableCell + " text-green-400 text-lg"}>
+                                            {formatCurrency(balances.total_current_balance)}
+                                        </td>
+                                        <td className={darkTheme.tableCell}>
+                                            <span className={
+                                                (balances.total_current_balance - balances.total_opening_balance) >= 0
+                                                    ? 'text-green-400'
+                                                    : 'text-red-400'
+                                            }>
+                                                {(balances.total_current_balance - balances.total_opening_balance) >= 0 ? '+' : ''}
+                                                {formatCurrency(balances.total_current_balance - balances.total_opening_balance)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                        {balances.accounts.length === 0 && (
+                            <div className="p-8 text-center text-slate-500">
+                                No accounts found
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Filters */}
@@ -323,8 +433,14 @@ export default function Transactions() {
                                         type="number"
                                         step="0.01"
                                         required
-                                        value={formData.amount}
-                                        onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                                        value={formData.amount || ''}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setFormData({
+                                                ...formData,
+                                                amount: value === '' ? 0 : parseFloat(value)
+                                            });
+                                        }}
                                         className={darkTheme.input}
                                         placeholder="0.00"
                                     />

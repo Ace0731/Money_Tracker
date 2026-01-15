@@ -83,6 +83,7 @@ export interface Project {
     start_date?: string;
     end_date?: string;
     notes?: string;
+    completed?: boolean;
     // Computed fields
     received_amount?: number;
     spent_amount?: number;
@@ -96,6 +97,14 @@ export interface TimeLog {
     hours: number;
     task?: string;
     created_at?: string;
+}
+
+export interface ProjectPayment {
+    id: number;
+    date: string;
+    amount: number;
+    notes?: string;
+    account_name?: string;
 }
 
 export interface Tag {

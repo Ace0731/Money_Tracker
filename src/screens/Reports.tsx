@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
@@ -43,6 +43,21 @@ interface OverallStats {
     transaction_count: number;
 }
 
+interface ProjectDetail {
+    project_id: number;
+    project_name: string;
+    expected: number;
+    actual: number;
+    outstanding_balance: number;
+}
+
+interface ProjectIncomeSummary {
+    month: string;
+    actual_income: number;
+    expected_income: number;
+    projects: ProjectDetail[];
+}
+
 interface ReportFilters {
     start_date: string;
     end_date: string;
@@ -61,6 +76,7 @@ export default function Reports() {
     const [incomeCategories, setIncomeCategories] = useState<CategorySummary[]>([]);
     const [expenseCategories, setExpenseCategories] = useState<CategorySummary[]>([]);
     const [clientSummary, setClientSummary] = useState<ClientSummary[]>([]);
+    const [projectIncomeReport, setProjectIncomeReport] = useState<ProjectIncomeSummary[]>([]);
     const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
 
     // Metadata for Filters
@@ -105,11 +121,12 @@ export default function Reports() {
                 project_id: filters.project_id || null,
             };
 
-            const [monthly, incCat, expCat, clientSum, stats] = await Promise.all([
+            const [monthly, incCat, expCat, clientSum, projectInc, stats] = await Promise.all([
                 execute<MonthlySummary[]>('get_monthly_summary', { year: selectedYear, filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'income', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'expense', filters: backendFilters }),
                 execute<ClientSummary[]>('get_client_summary', { filters: backendFilters }),
+                execute<ProjectIncomeSummary[]>('get_project_income_report', { year: selectedYear }),
                 execute<OverallStats>('get_overall_stats', { filters: backendFilters }),
             ]);
 
@@ -117,6 +134,7 @@ export default function Reports() {
             setIncomeCategories(incCat);
             setExpenseCategories(expCat);
             setClientSummary(clientSum);
+            setProjectIncomeReport(projectInc);
             setOverallStats(stats);
         } catch (error) {
             console.error('Failed to load reports:', error);
@@ -323,6 +341,105 @@ export default function Reports() {
                             <Bar dataKey="total_income" fill="#3b82f6" name="Income" />
                         </BarChart>
                     </ResponsiveContainer>
+                </div>
+            )}
+
+            {/* Project Income Performance */}
+            {projectIncomeReport.length > 0 && (
+                <div className={darkTheme.card + " p-6 mb-6"}>
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className={darkTheme.subtitle}>Project Income Performance</h2>
+                        <div className="flex gap-4 text-xs">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 bg-blue-500 rounded-sm"></span>
+                                <span className="text-slate-400">Actual Income</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 bg-slate-600 rounded-sm"></span>
+                                <span className="text-slate-400">Expected (Budget)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                        <div className="h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={projectIncomeReport}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#475569" vertical={false} />
+                                    <XAxis
+                                        dataKey="month"
+                                        stroke="#64748b"
+                                        fontSize={11}
+                                        tickFormatter={(val) => {
+                                            const [y, m] = val.split('-');
+                                            const date = new Date(parseInt(y), parseInt(m) - 1);
+                                            return date.toLocaleString('default', { month: 'short' });
+                                        }}
+                                    />
+                                    <YAxis stroke="#64748b" fontSize={11} tickFormatter={(val) => formatCurrency(val)} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '12px' }}
+                                        formatter={(value: number) => formatCurrency(value)}
+                                        labelStyle={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}
+                                    />
+                                    <Bar dataKey="actual_income" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Actual" barSize={32} />
+                                    <Bar dataKey="expected_income" fill="#475569" radius={[4, 4, 0, 0]} name="Expected" barSize={32} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        <div className="bg-slate-900/40 rounded-xl border border-slate-700/50 overflow-hidden">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-3">Month / Project</th>
+                                        <th className="px-4 py-3 text-right">Target</th>
+                                        <th className="px-4 py-3 text-right">Actual</th>
+                                        <th className="px-4 py-3 text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {projectIncomeReport.map((monthData) => (
+                                        <React.Fragment key={monthData.month}>
+                                            <tr className="bg-slate-800/20 border-l-2 border-blue-500">
+                                                <td className="px-4 py-3 font-bold text-slate-100 italic">
+                                                    {new Date(monthData.month + '-01').toLocaleString('default', { month: 'long' })}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-400 font-bold">
+                                                    {formatCurrency(monthData.expected_income)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-blue-400 font-bold">
+                                                    {formatCurrency(monthData.actual_income)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-500 text-[10px] uppercase">
+                                                    Month Total
+                                                </td>
+                                            </tr>
+                                            {monthData.projects.map((project) => {
+                                                return (
+                                                    <tr key={`${monthData.month}-${project.project_id}`} className="hover:bg-blue-500/5 transition-colors text-[11px]">
+                                                        <td className="px-8 py-2 text-slate-400 flex items-center gap-2">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                                                            {project.project_name}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right text-slate-500">
+                                                            {project.expected > 0 ? formatCurrency(project.expected) : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right text-slate-300">
+                                                            {project.actual > 0 ? formatCurrency(project.actual) : '-'}
+                                                        </td>
+                                                        <td className={`px-4 py-2 text-right font-mono ${project.outstanding_balance > 0 ? 'text-orange-400/80' : 'text-slate-600'}`}>
+                                                            {project.outstanding_balance > 0 ? `Pending: ${formatCurrency(project.outstanding_balance)}` : 'Settled'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             )}
 

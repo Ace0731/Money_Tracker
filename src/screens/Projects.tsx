@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Project, Client, TimeLog } from '../types';
+import type { Project, Client, TimeLog, ProjectPayment } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 
@@ -19,6 +19,7 @@ export default function Projects() {
         start_date: '',
         end_date: '',
         notes: '',
+        completed: false,
     });
 
     // Time Log State
@@ -27,11 +28,17 @@ export default function Projects() {
     const [showViewLogs, setShowViewLogs] = useState(false);
     const [viewLogsProjectId, setViewLogsProjectId] = useState<number | undefined>();
     const [projectTimeLogs, setProjectTimeLogs] = useState<Record<number, TimeLog[]>>({});
+    const [editingLogId, setEditingLogId] = useState<number | undefined>();
     const [timeLogData, setTimeLogData] = useState({
         hours: 8,
         task: '',
         date: new Date().toISOString().split('T')[0],
     });
+
+    // Payment Log State
+    const [showPayments, setShowPayments] = useState(false);
+    const [paymentLogsProjectId, setPaymentLogsProjectId] = useState<number | undefined>();
+    const [projectPayments, setProjectPayments] = useState<Record<number, ProjectPayment[]>>({});
 
     useEffect(() => {
         loadProjects();
@@ -74,6 +81,7 @@ export default function Projects() {
                 start_date: '',
                 end_date: '',
                 notes: '',
+                completed: false,
             });
         } catch (error) {
             console.error('Failed to save project:', error);
@@ -93,14 +101,28 @@ export default function Projects() {
     const handleTimeLogSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await execute('create_time_log', {
-                log: {
-                    project_id: selectedProjectId,
-                    ...timeLogData
-                }
-            });
+            if (editingLogId) {
+                await execute('update_time_log', {
+                    log: {
+                        id: editingLogId,
+                        project_id: selectedProjectId,
+                        ...timeLogData
+                    }
+                });
+            } else {
+                await execute('create_time_log', {
+                    log: {
+                        project_id: selectedProjectId,
+                        ...timeLogData
+                    }
+                });
+            }
+            if (selectedProjectId) {
+                await loadTimeLogs(selectedProjectId);
+            }
             await loadProjects();
             setShowTimeLog(false);
+            setEditingLogId(undefined);
             setTimeLogData({
                 hours: 8,
                 task: '',
@@ -111,11 +133,31 @@ export default function Projects() {
         }
     };
 
+    const handleEditTimeLog = (log: TimeLog) => {
+        setEditingLogId(log.id);
+        setSelectedProjectId(log.project_id);
+        setTimeLogData({
+            hours: log.hours,
+            task: log.task || '',
+            date: log.date,
+        });
+        setShowTimeLog(true);
+    };
+
+    const handleDeleteTimeLog = async (logId: number, projectId: number) => {
+        if (!window.confirm('Are you sure you want to delete this time log?')) return;
+        try {
+            await execute('delete_time_log', { id: logId });
+            await loadTimeLogs(projectId);
+            await loadProjects();
+        } catch (error) {
+            console.error('Failed to delete time log:', error);
+        }
+    };
+
     const loadTimeLogs = async (projectId: number) => {
         try {
-            console.log('Loading time logs for project:', projectId);
             const logs = await execute<TimeLog[]>('get_time_logs', { projectId: projectId });
-            console.log('Received time logs:', logs);
             setProjectTimeLogs(prev => ({ ...prev, [projectId]: logs }));
         } catch (error) {
             console.error('Failed to load time logs:', error);
@@ -128,6 +170,21 @@ export default function Projects() {
         if (!projectTimeLogs[projectId]) {
             await loadTimeLogs(projectId);
         }
+    };
+
+    const loadPayments = async (projectId: number) => {
+        try {
+            const payments = await execute<ProjectPayment[]>('get_project_payments', { projectId: projectId });
+            setProjectPayments(prev => ({ ...prev, [projectId]: payments }));
+        } catch (error) {
+            console.error('Failed to load payments:', error);
+        }
+    };
+
+    const openPayments = async (projectId: number) => {
+        setPaymentLogsProjectId(projectId);
+        setShowPayments(true);
+        await loadPayments(projectId);
     };
 
     const getClientName = (clientId?: number) => {
@@ -149,6 +206,7 @@ export default function Projects() {
                             start_date: '',
                             end_date: '',
                             notes: '',
+                            completed: false,
                         });
                         setShowForm(true);
                     }}
@@ -160,92 +218,158 @@ export default function Projects() {
 
             {loading && <div className={darkTheme.loading}>Loading...</div>}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects.map((project) => (
-                    <div
-                        key={project.id}
-                        className={`${darkTheme.card} p-6 cursor-pointer`}
-                        onClick={() => handleEdit(project)}
-                    >
-                        <div className="flex justify-between items-start mb-2">
-                            <h3 className="text-xl font-bold text-slate-100">{project.name}</h3>
-                            {project.expected_amount && (
-                                <span className="text-sm font-bold text-green-400">
-                                    {formatCurrency(project.expected_amount)}
-                                </span>
-                            )}
-                        </div>
-
-                        <p className="text-sm text-blue-400 mb-4">{getClientName(project.client_id)}</p>
-
-                        <div className="grid grid-cols-2 gap-4 mb-4 p-3 bg-slate-700/50 rounded-lg">
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase">Earned (Time)</div>
-                                <div className="text-sm font-bold text-slate-100">
-                                    {formatCurrency(((project.logged_hours || 0) / 8) * (project.daily_rate || 0))}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase">Received</div>
-                                <div className="text-sm font-bold text-green-400">
-                                    {formatCurrency(project.received_amount || 0)}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase">Spent</div>
-                                <div className="text-sm font-bold text-orange-400">
-                                    {formatCurrency(project.spent_amount || 0)}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
-                                <div className="text-sm font-bold text-blue-400">
-                                    {formatCurrency((project.expected_amount || 0) - (project.received_amount || 0))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 items-center mb-4">
-                            <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-bold">
-                                ⏱️ {project.logged_hours || 0}h Logged
-                            </span>
-                            {project.daily_rate ? (
-                                <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
-                                    Target: {formatCurrency(project.daily_rate)}/day
-                                </span>
-                            ) : null}
-                            {project.logged_hours && project.logged_hours > 0 ? (
-                                <span className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-400 rounded-full border border-green-500/20 font-mono">
-                                    Actual: {formatCurrency((project.received_amount! / project.logged_hours) * 8)}/day
-                                </span>
-                            ) : null}
-                        </div>
-
-                        {(project.start_date || project.end_date) && (
-                            <div className="text-xs text-slate-400 mb-2 flex justify-between">
-                                {project.start_date && <span>Start: {project.start_date}</span>}
-                                {project.end_date && <span>End: {project.end_date}</span>}
-                            </div>
-                        )}
-
-                        {project.notes && <p className="text-sm text-slate-400 truncate mb-4">{project.notes}</p>}
-
-                        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                            <button
-                                onClick={() => handleLogTime(project.id!)}
-                                className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-bold rounded transition-colors border border-blue-600/30"
+            <div className="space-y-8">
+                {/* Active Projects */}
+                <div>
+                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {projects.filter(p => !p.completed).map((project) => (
+                            <div
+                                key={project.id}
+                                className={`${darkTheme.card} p-6 cursor-pointer relative group`}
+                                onClick={() => handleEdit(project)}
                             >
-                                ⏱️ Log Time
-                            </button>
-                            <button
-                                onClick={() => openTimeLogs(project.id!)}
-                                className="flex-1 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded transition-colors border border-slate-600"
-                            >
-                                📋 View Logs
-                            </button>
+                                <div className="flex justify-between items-start mb-2">
+                                    <h3 className="text-xl font-bold text-slate-100">{project.name}</h3>
+                                    {project.expected_amount && (
+                                        <span className="text-sm font-bold text-green-400">
+                                            {formatCurrency(project.expected_amount)}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <p className="text-sm text-blue-400 mb-4">{getClientName(project.client_id)}</p>
+
+                                <div className="grid grid-cols-2 gap-4 mb-4 p-3 bg-slate-700/50 rounded-lg">
+                                    <div>
+                                        <div className="text-[10px] text-slate-400 uppercase">Earned (Time)</div>
+                                        <div className="text-sm font-bold text-slate-100">
+                                            {formatCurrency(((project.logged_hours || 0) / 8) * (project.daily_rate || 0))}
+                                        </div>
+                                    </div>
+                                    <div className="hover:bg-green-500/10 transition-colors rounded p-1" onClick={(e) => { e.stopPropagation(); project.id && openPayments(project.id); }}>
+                                        <div className="text-[10px] text-slate-400 uppercase flex justify-between items-center">
+                                            Received
+                                            <span className="text-[8px] text-green-500 font-bold">VIEW 👁️</span>
+                                        </div>
+                                        <div className="text-sm font-bold text-green-400">
+                                            {formatCurrency(project.received_amount || 0)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-slate-400 uppercase">Spent</div>
+                                        <div className="text-sm font-bold text-orange-400">
+                                            {formatCurrency(project.spent_amount || 0)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
+                                        <div className="text-sm font-bold text-blue-400">
+                                            {formatCurrency((project.expected_amount || 0) - (project.received_amount || 0))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 items-center mb-4">
+                                    <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-bold">
+                                        ⏱️ {project.logged_hours || 0}h Logged
+                                    </span>
+                                    {project.daily_rate ? (
+                                        <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
+                                            Target: {formatCurrency(project.daily_rate)}/day
+                                        </span>
+                                    ) : null}
+                                </div>
+
+                                {(project.start_date || project.end_date) && (
+                                    <div className="text-xs text-slate-400 mb-2 flex justify-between">
+                                        {project.start_date && <span>Start: {project.start_date}</span>}
+                                        {project.end_date && <span>End: {project.end_date}</span>}
+                                    </div>
+                                )}
+
+                                {project.notes && <p className="text-sm text-slate-400 truncate mb-4">{project.notes}</p>}
+
+                                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                        onClick={() => handleLogTime(project.id!)}
+                                        className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-bold rounded transition-colors border border-blue-600/30"
+                                    >
+                                        ⏱️ Log Time
+                                    </button>
+                                    <button
+                                        onClick={() => openTimeLogs(project.id!)}
+                                        className="flex-1 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded transition-colors border border-slate-600"
+                                    >
+                                        📋 Time Logs
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Completed Projects */}
+                {projects.some(p => p.completed) && (
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-green-500 pl-3">Completed Projects</h2>
+                        <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-900/50 text-xs text-slate-400 uppercase">
+                                        <tr>
+                                            <th className="px-4 py-3 border-b border-slate-700">Project</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Client</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Earned</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Received</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Hours</th>
+                                            <th className="px-4 py-3 border-b border-slate-700 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700">
+                                        {projects.filter(p => p.completed).map((project) => (
+                                            <tr key={project.id} className="hover:bg-slate-700/30 transition-colors">
+                                                <td className="px-4 py-3 text-slate-200 font-bold">{project.name}</td>
+                                                <td className="px-4 py-3 text-blue-400 text-sm">{getClientName(project.client_id)}</td>
+                                                <td className="px-4 py-3 text-slate-200 text-sm">{formatCurrency(((project.logged_hours || 0) / 8) * (project.daily_rate || 0))}</td>
+                                                <td className="px-4 py-3 text-green-400 font-bold group/received">
+                                                    <div className="flex items-center gap-2">
+                                                        {formatCurrency(project.received_amount || 0)}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); project.id && openPayments(project.id); }}
+                                                            className="text-[10px] text-slate-500 hover:text-green-400 opacity-0 group-hover/received:opacity-100 transition-opacity"
+                                                        >
+                                                            👁️
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-400 text-sm">{project.logged_hours || 0}h</td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <div className="flex gap-2 justify-end">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleEdit(project); }}
+                                                            className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); openTimeLogs(project.id!); }}
+                                                            className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                                                            title="Logs"
+                                                        >
+                                                            📋
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                ))}
+                )}
             </div>
 
             {projects.length === 0 && !loading && (
@@ -345,6 +469,19 @@ export default function Projects() {
                                 />
                             </div>
 
+                            <div className="flex items-center gap-2 py-2">
+                                <input
+                                    type="checkbox"
+                                    id="completed"
+                                    checked={formData.completed || false}
+                                    onChange={(e) => setFormData({ ...formData, completed: e.target.checked })}
+                                    className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-800"
+                                />
+                                <label htmlFor="completed" className="text-sm font-medium text-slate-200">
+                                    Project Completed
+                                </label>
+                            </div>
+
                             <div className="flex justify-end gap-2 pt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>
                                     Cancel
@@ -361,7 +498,7 @@ export default function Projects() {
             {showTimeLog && (
                 <div className={darkTheme.modalOverlay}>
                     <div className={darkTheme.modalContent}>
-                        <h2 className={darkTheme.modalTitle}>Log Work Time</h2>
+                        <h2 className={darkTheme.modalTitle}>{editingLogId ? 'Edit Work Log' : 'Log Work Time'}</h2>
                         <form onSubmit={handleTimeLogSubmit} className="space-y-4">
                             <div>
                                 <label className={darkTheme.label}>Date</label>
@@ -403,11 +540,15 @@ export default function Projects() {
                                 />
                             </div>
                             <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowTimeLog(false)} className={darkTheme.btnCancel}>
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowTimeLog(false); setEditingLogId(undefined); }}
+                                    className={darkTheme.btnCancel}
+                                >
                                     Cancel
                                 </button>
                                 <button type="submit" className={darkTheme.btnPrimary}>
-                                    Save Log
+                                    {editingLogId ? 'Update Log' : 'Save Log'}
                                 </button>
                             </div>
                         </form>
@@ -415,18 +556,22 @@ export default function Projects() {
                 </div>
             )}
 
-            {/* View Time Logs Modal */}
             {showViewLogs && viewLogsProjectId && (
                 <div className={darkTheme.modalOverlay}>
                     <div className={darkTheme.modalContentLarge}>
-                        <h2 className={darkTheme.modalTitle}>
-                            Time Log History - {projects.find(p => p.id === viewLogsProjectId)?.name}
-                        </h2>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className={darkTheme.modalTitle}>
+                                Time Log History - {projects.find(p => p.id === viewLogsProjectId)?.name}
+                            </h2>
+                            <span className="px-3 py-1 bg-blue-500/10 text-blue-400 rounded-full text-xs font-bold border border-blue-500/20">
+                                Total: {projectTimeLogs[viewLogsProjectId]?.reduce((sum, log) => sum + log.hours, 0) || 0}h
+                            </span>
+                        </div>
 
-                        <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                             {projectTimeLogs[viewLogsProjectId]?.length > 0 ? (
                                 projectTimeLogs[viewLogsProjectId].map((log) => (
-                                    <div key={log.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
+                                    <div key={log.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50 group/log">
                                         <div className="flex justify-between items-start mb-3">
                                             <div>
                                                 <span className="text-sm font-mono text-blue-400">{log.date}</span>
@@ -436,7 +581,25 @@ export default function Projects() {
                                                     </p>
                                                 )}
                                             </div>
-                                            <span className="text-lg font-bold text-green-400">{log.hours}h</span>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-lg font-bold text-green-400">{log.hours}h</span>
+                                                <div className="flex gap-1 opacity-0 group-hover/log:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => handleEditTimeLog(log)}
+                                                        className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-blue-400 transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                    <button
+                                                        onClick={() => log.id && handleDeleteTimeLog(log.id, viewLogsProjectId)}
+                                                        className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                         {log.task && (
                                             <p className="text-sm text-slate-300 bg-slate-900/50 p-2 rounded">{log.task}</p>
@@ -454,6 +617,68 @@ export default function Projects() {
                         <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-700">
                             <button
                                 onClick={() => setShowViewLogs(false)}
+                                className={darkTheme.btnCancel}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Payment Logs Modal */}
+            {showPayments && paymentLogsProjectId && (
+                <div className={darkTheme.modalOverlay}>
+                    <div className={darkTheme.modalContentLarge}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className={darkTheme.modalTitle}>
+                                Payment History - {projects.find(p => p.id === paymentLogsProjectId)?.name}
+                            </h2>
+                            <span className="px-3 py-1 bg-green-500/10 text-green-400 rounded-full text-xs font-bold border border-green-500/20">
+                                Total Received: {formatCurrency(projectPayments[paymentLogsProjectId]?.reduce((sum, p) => sum + p.amount, 0) || 0)}
+                            </span>
+                        </div>
+
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                            {projectPayments[paymentLogsProjectId]?.length > 0 ? (
+                                projectPayments[paymentLogsProjectId].map((payment) => (
+                                    <div key={payment.id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-sm font-mono text-blue-400">{payment.date}</span>
+                                                    <span className="text-[10px] px-2 py-0.5 bg-slate-900 text-slate-400 rounded border border-slate-700 font-medium">
+                                                        {payment.account_name}
+                                                    </span>
+                                                </div>
+                                                {payment.notes && (
+                                                    <p className="text-sm text-slate-300 mt-2 bg-slate-900/30 p-2 rounded italic">
+                                                        "{payment.notes}"
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-lg font-bold text-green-400">
+                                                    {formatCurrency(payment.amount)}
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-tighter">
+                                                    Transaction #{payment.id}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-slate-500 italic mb-2">No payments recorded for this project.</p>
+                                    <p className="text-xs text-slate-600">Link income transactions to this project in the Transactions screen.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-700">
+                            <button
+                                onClick={() => setShowPayments(false)}
                                 className={darkTheme.btnCancel}
                             >
                                 Close

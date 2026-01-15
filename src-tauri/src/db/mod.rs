@@ -26,6 +26,9 @@ pub fn initialize_database() -> Result<DbConnection> {
     // Safe migrations for updates
     // 1. Add daily_rate to projects if it doesn't exist
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN daily_rate REAL DEFAULT 0.0", []);
+    
+    // 1b. Add completed to projects if it doesn't exist
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN completed INTEGER DEFAULT 0", []);
 
     // 2. Create time_logs table if it doesn't exist
     conn.execute(

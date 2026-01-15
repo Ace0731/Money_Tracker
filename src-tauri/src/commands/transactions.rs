@@ -47,6 +47,134 @@ pub struct TransactionFilters {
     pub direction: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AccountBalance {
+    pub account_id: i64,
+    pub account_name: String,
+    pub account_type: String,
+    pub opening_balance: f64,
+    pub current_balance: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionBalances {
+    pub accounts: Vec<AccountBalance>,
+    pub total_opening_balance: f64,
+    pub total_current_balance: f64,
+}
+
+#[tauri::command]
+pub fn get_transaction_balances(
+    db: State<DbConnection>,
+    filters: Option<TransactionFilters>,
+) -> Result<TransactionBalances, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    // Get all accounts with their opening balances, names, and types
+    let mut stmt = conn
+        .prepare("SELECT id, name, type, opening_balance FROM accounts ORDER BY name")
+        .map_err(|e| e.to_string())?;
+    
+    let accounts: Vec<(i64, String, String, f64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    
+    let mut account_balances = Vec::new();
+    let mut total_opening_balance = 0.0;
+    let mut total_current_balance = 0.0;
+    
+    // Get start date from filters or use current month start
+    let start_date = if let Some(ref f) = filters {
+        f.start_date.clone()
+    } else {
+        None
+    };
+    
+    let end_date = if let Some(ref f) = filters {
+        f.end_date.clone()
+    } else {
+        None
+    };
+    
+    // Calculate balances for each account
+    for (account_id, account_name, account_type, account_opening_balance) in accounts {
+        // Calculate balance at start of period (opening balance)
+        let incoming_before: f64 = if let Some(ref start) = start_date {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1 AND date < ?2",
+                [account_id.to_string(), start.clone()],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        
+        let outgoing_before: f64 = if let Some(ref start) = start_date {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1 AND date < ?2",
+                [account_id.to_string(), start.clone()],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        
+        let account_opening = account_opening_balance + incoming_before - outgoing_before;
+        
+        // Calculate balance at end of period (current balance)
+        let incoming_upto: f64 = if let Some(ref end) = end_date {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1 AND date <= ?2",
+                [account_id.to_string(), end.clone()],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        } else {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1",
+                [account_id],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        };
+        
+        let outgoing_upto: f64 = if let Some(ref end) = end_date {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1 AND date <= ?2",
+                [account_id.to_string(), end.clone()],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        } else {
+            conn.query_row(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1",
+                [account_id],
+                |row| row.get(0)
+            ).unwrap_or(0.0)
+        };
+        
+        let account_current = account_opening_balance + incoming_upto - outgoing_upto;
+        
+        // Add to totals
+        total_opening_balance += account_opening;
+        total_current_balance += account_current;
+        
+        // Add account balance to result
+        account_balances.push(AccountBalance {
+            account_id,
+            account_name,
+            account_type,
+            opening_balance: account_opening,
+            current_balance: account_current,
+        });
+    }
+    
+    Ok(TransactionBalances {
+        accounts: account_balances,
+        total_opening_balance,
+        total_current_balance,
+    })
+}
+
 #[tauri::command]
 pub fn get_transactions(
     db: State<DbConnection>,

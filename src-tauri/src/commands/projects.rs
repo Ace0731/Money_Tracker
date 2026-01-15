@@ -13,10 +13,20 @@ pub struct Project {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub notes: Option<String>,
+    pub completed: Option<bool>,
     // Computed fields
     pub received_amount: Option<f64>,
     pub spent_amount: Option<f64>,
     pub logged_hours: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectPayment {
+    pub id: i64,
+    pub date: String,
+    pub amount: f64,
+    pub notes: Option<String>,
+    pub account_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,12 +46,12 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
     let mut stmt = conn
         .prepare("
             SELECT 
-                p.id, p.name, p.client_id, p.expected_amount, p.daily_rate, p.start_date, p.end_date, p.notes,
+                p.id, p.name, p.client_id, p.expected_amount, p.daily_rate, p.start_date, p.end_date, p.notes, p.completed,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'income') as received,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'expense') as spent,
                 (SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = p.id) as hours
             FROM projects p 
-            ORDER BY p.name
+            ORDER BY p.completed ASC, p.name
         ")
         .map_err(|e| e.to_string())?;
     
@@ -56,9 +66,10 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
                 start_date: row.get(5)?,
                 end_date: row.get(6)?,
                 notes: row.get(7)?,
-                received_amount: Some(row.get(8)?),
-                spent_amount: Some(row.get(9)?),
-                logged_hours: Some(row.get(10)?),
+                completed: row.get(8)?,
+                received_amount: Some(row.get(9)?),
+                spent_amount: Some(row.get(10)?),
+                logged_hours: Some(row.get(11)?),
             })
         })
         .map_err(|e| e.to_string())?
@@ -76,7 +87,7 @@ pub fn create_project(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO projects (name, client_id, expected_amount, daily_rate, start_date, end_date, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO projects (name, client_id, expected_amount, daily_rate, start_date, end_date, notes, completed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             project.name,
             project.client_id,
@@ -84,7 +95,8 @@ pub fn create_project(
             project.daily_rate.unwrap_or(0.0),
             project.start_date,
             project.end_date,
-            project.notes
+            project.notes,
+            project.completed.unwrap_or(false)
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -102,7 +114,7 @@ pub fn update_project(
     let id = project.id.ok_or("Project ID is required")?;
     
     conn.execute(
-        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, daily_rate = ?4, start_date = ?5, end_date = ?6, notes = ?7 WHERE id = ?8",
+        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, daily_rate = ?4, start_date = ?5, end_date = ?6, notes = ?7, completed = ?8 WHERE id = ?9",
         params![
             project.name,
             project.client_id,
@@ -111,6 +123,7 @@ pub fn update_project(
             project.start_date,
             project.end_date,
             project.notes,
+            project.completed.unwrap_or(false),
             id
         ],
     )
@@ -151,8 +164,49 @@ pub fn create_time_log(db: State<DbConnection>, log: TimeLog) -> Result<i64, Str
 }
 
 #[tauri::command]
+pub fn update_time_log(db: State<DbConnection>, log: TimeLog) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let id = log.id.ok_or("Time log ID is required")?;
+    conn.execute(
+        "UPDATE time_logs SET date = ?1, hours = ?2, task = ?3 WHERE id = ?4",
+        params![log.date, log.hours, log.task, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_time_log(db: State<DbConnection>, id: i64) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM time_logs WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
     Ok(())
+}
+#[tauri::command]
+pub fn get_project_payments(db: State<DbConnection>, project_id: i64) -> Result<Vec<ProjectPayment>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn
+        .prepare("
+            SELECT t.id, t.date, t.amount, t.notes, a.name as account_name
+            FROM transactions t
+            LEFT JOIN accounts a ON t.to_account_id = a.id
+            WHERE t.project_id = ?1 AND t.direction = 'income'
+            ORDER BY t.date DESC
+        ")
+        .map_err(|e| e.to_string())?;
+    
+    let payments = stmt
+        .query_map([project_id], |row| {
+            Ok(ProjectPayment {
+                id: row.get(0)?,
+                date: row.get(1)?,
+                amount: row.get(2)?,
+                notes: row.get(3)?,
+                account_name: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    
+    Ok(payments)
 }

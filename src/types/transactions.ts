@@ -18,3 +18,16 @@ export interface TransactionWithDetails {
     notes?: string;
     tags: string[];
 }
+export interface AccountBalance {
+    account_id: number;
+    account_name: string;
+    account_type: string;
+    opening_balance: number;
+    current_balance: number;
+}
+
+export interface TransactionBalances {
+    accounts: AccountBalance[];
+    total_opening_balance: number;
+    total_current_balance: number;
+}
