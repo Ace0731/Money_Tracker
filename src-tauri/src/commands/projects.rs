@@ -36,6 +36,8 @@ pub struct TimeLog {
     pub date: String,
     pub hours: f64,
     pub task: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
     pub created_at: Option<String>,
 }
 
@@ -135,7 +137,7 @@ pub fn update_project(
 #[tauri::command]
 pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<TimeLog>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id, project_id, date, hours, task, created_at FROM time_logs WHERE project_id = ?1 ORDER BY date DESC")
+    let mut stmt = conn.prepare("SELECT id, project_id, date, hours, task, start_time, end_time, created_at FROM time_logs WHERE project_id = ?1 ORDER BY date DESC")
         .map_err(|e| e.to_string())?;
     
     let logs = stmt.query_map([project_id], |row| {
@@ -145,7 +147,9 @@ pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<Tim
             date: row.get(2)?,
             hours: row.get(3)?,
             task: row.get(4)?,
-            created_at: Some(row.get(5)?),
+            start_time: row.get(5)?,
+            end_time: row.get(6)?,
+            created_at: Some(row.get(7)?),
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
@@ -157,8 +161,8 @@ pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<Tim
 pub fn create_time_log(db: State<DbConnection>, log: TimeLog) -> Result<i64, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO time_logs (project_id, date, hours, task) VALUES (?1, ?2, ?3, ?4)",
-        params![log.project_id, log.date, log.hours, log.task],
+        "INSERT INTO time_logs (project_id, date, hours, task, start_time, end_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![log.project_id, log.date, log.hours, log.task, log.start_time, log.end_time],
     ).map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
@@ -168,8 +172,8 @@ pub fn update_time_log(db: State<DbConnection>, log: TimeLog) -> Result<(), Stri
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let id = log.id.ok_or("Time log ID is required")?;
     conn.execute(
-        "UPDATE time_logs SET date = ?1, hours = ?2, task = ?3 WHERE id = ?4",
-        params![log.date, log.hours, log.task, id],
+        "UPDATE time_logs SET date = ?1, hours = ?2, task = ?3, start_time = ?4, end_time = ?5 WHERE id = ?6",
+        params![log.date, log.hours, log.task, log.start_time, log.end_time, id],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }

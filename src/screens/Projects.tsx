@@ -33,6 +33,8 @@ export default function Projects() {
         hours: 8,
         task: '',
         date: new Date().toISOString().split('T')[0],
+        start_time: '09:00',
+        end_time: '17:00'
     });
 
     // Payment Log State
@@ -127,6 +129,8 @@ export default function Projects() {
                 hours: 8,
                 task: '',
                 date: new Date().toISOString().split('T')[0],
+                start_time: '09:00',
+                end_time: '17:00'
             });
         } catch (error) {
             console.error('Failed to log time:', error);
@@ -140,6 +144,8 @@ export default function Projects() {
             hours: log.hours,
             task: log.task || '',
             date: log.date,
+            start_time: log.start_time || '09:00',
+            end_time: log.end_time || '17:00'
         });
         setShowTimeLog(true);
     };
@@ -263,6 +269,15 @@ export default function Projects() {
                                         </div>
                                     </div>
                                     <div>
+                                        <div className="text-[10px] text-slate-400 uppercase">Actual Rate</div>
+                                        <div className="text-sm font-bold text-green-400">
+                                            {project.logged_hours && project.logged_hours > 0
+                                                ? formatCurrency((project.received_amount || 0) / (project.logged_hours / 8))
+                                                : '---'}
+                                            <span className="text-[10px] text-slate-500 font-normal ml-1">/day</span>
+                                        </div>
+                                    </div>
+                                    <div>
                                         <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
                                         <div className="text-sm font-bold text-blue-400">
                                             {formatCurrency((project.expected_amount || 0) - (project.received_amount || 0))}
@@ -322,6 +337,7 @@ export default function Projects() {
                                             <th className="px-4 py-3 border-b border-slate-700">Client</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Earned</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Received</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Actual Rate</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Hours</th>
                                             <th className="px-4 py-3 border-b border-slate-700 text-right">Actions</th>
                                         </tr>
@@ -342,6 +358,11 @@ export default function Projects() {
                                                             👁️
                                                         </button>
                                                     </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-200 text-sm">
+                                                    {project.logged_hours && project.logged_hours > 0
+                                                        ? formatCurrency((project.received_amount || 0) / (project.logged_hours / 8))
+                                                        : '---'}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400 text-sm">{project.logged_hours || 0}h</td>
                                                 <td className="px-4 py-3 text-right">
@@ -496,7 +517,7 @@ export default function Projects() {
             )}
 
             {showTimeLog && (
-                <div className={darkTheme.modalOverlay}>
+                <div className={`${darkTheme.modalOverlay} z-[60]`}>
                     <div className={darkTheme.modalContent}>
                         <h2 className={darkTheme.modalTitle}>{editingLogId ? 'Edit Work Log' : 'Log Work Time'}</h2>
                         <form onSubmit={handleTimeLogSubmit} className="space-y-4">
@@ -512,13 +533,63 @@ export default function Projects() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className={darkTheme.label}>Hours</label>
+                                    <label className={darkTheme.label}>Start Time</label>
+                                    <input
+                                        type="time"
+                                        required
+                                        value={timeLogData.start_time}
+                                        onChange={(e) => {
+                                            const startTime = e.target.value;
+                                            const endTime = timeLogData.end_time;
+                                            let hours = timeLogData.hours;
+
+                                            if (startTime && endTime) {
+                                                const startParts = startTime.split(':').map(Number);
+                                                const endParts = endTime.split(':').map(Number);
+                                                let diffMin = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
+                                                if (diffMin < 0) diffMin += 24 * 60;
+                                                hours = Math.round((diffMin / 60) * 10) / 10;
+                                            }
+
+                                            setTimeLogData({ ...timeLogData, start_time: startTime, hours });
+                                        }}
+                                        className={darkTheme.input}
+                                    />
+                                </div>
+                                <div>
+                                    <label className={darkTheme.label}>End Time</label>
+                                    <input
+                                        type="time"
+                                        required
+                                        value={timeLogData.end_time}
+                                        onChange={(e) => {
+                                            const endTime = e.target.value;
+                                            const startTime = timeLogData.start_time;
+                                            let hours = timeLogData.hours;
+
+                                            if (startTime && endTime) {
+                                                const startParts = startTime.split(':').map(Number);
+                                                const endParts = endTime.split(':').map(Number);
+                                                let diffMin = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
+                                                if (diffMin < 0) diffMin += 24 * 60;
+                                                hours = Math.round((diffMin / 60) * 10) / 10;
+                                            }
+
+                                            setTimeLogData({ ...timeLogData, end_time: endTime, hours });
+                                        }}
+                                        className={darkTheme.input}
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={darkTheme.label}>Total Hours</label>
                                     <input
                                         type="number"
-                                        step="0.5"
+                                        step="0.1"
                                         required
                                         value={timeLogData.hours}
-                                        onChange={(e) => setTimeLogData({ ...timeLogData, hours: parseFloat(e.target.value) })}
+                                        onChange={(e) => setTimeLogData({ ...timeLogData, hours: parseFloat(e.target.value) || 0 })}
                                         className={darkTheme.input}
                                     />
                                 </div>
@@ -582,7 +653,14 @@ export default function Projects() {
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <span className="text-lg font-bold text-green-400">{log.hours}h</span>
+                                                <div className="text-right">
+                                                    <span className="text-lg font-bold text-green-400 block leading-none">{log.hours}h</span>
+                                                    {log.start_time && log.end_time && (
+                                                        <span className="text-[10px] text-slate-500 font-mono italic">
+                                                            ({log.start_time} - {log.end_time})
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="flex gap-1 opacity-0 group-hover/log:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={() => handleEditTimeLog(log)}

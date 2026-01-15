@@ -96,6 +96,8 @@ export interface TimeLog {
     date: string;
     hours: number;
     task?: string;
+    start_time?: string;
+    end_time?: string;
     created_at?: string;
 }
 

@@ -38,11 +38,17 @@ pub fn initialize_database() -> Result<DbConnection> {
             date DATE NOT NULL,
             hours REAL NOT NULL,
             task TEXT,
+            start_time TEXT,
+            end_time TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         )",
         [],
     )?;
+
+    // 2b. Add start_time and end_time to time_logs if they don't exist
+    let _ = conn.execute("ALTER TABLE time_logs ADD COLUMN start_time TEXT", []);
+    let _ = conn.execute("ALTER TABLE time_logs ADD COLUMN end_time TEXT", []);
 
     // 3. Create investments table if it doesn't exist
     conn.execute(
