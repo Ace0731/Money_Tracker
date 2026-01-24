@@ -14,7 +14,7 @@ export default function Investments() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [platformBalances, setPlatformBalances] = useState<PlatformBalance[]>([]);
     const [showLotForm, setShowLotForm] = useState(false);
-    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd'>('all');
+    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf'>('all');
     const [timePeriod, setTimePeriod] = useState<'all' | 'today' | 'month' | 'year'>('all');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [showViewLots, setShowViewLots] = useState(false);
@@ -382,7 +382,7 @@ export default function Investments() {
             <div className="space-y-3 mb-6">
                 {/* Asset Type Filter */}
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    {(['all', 'stock', 'mf', 'fd', 'rd'] as const).map(t => (
+                    {(['all', 'stock', 'mf', 'fd', 'rd', 'nps', 'ppf'] as const).map(t => (
                         <button
                             key={t}
                             onClick={() => setFilter(t)}
@@ -627,6 +627,66 @@ export default function Investments() {
                         </div>
                     </section>
                 )}
+
+                {/* NPS & PPF Retirement Section */}
+                {(filter === 'all' || filter === 'nps' || filter === 'ppf') && (
+                    <section>
+                        <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
+                            <span>🎯</span> Retirement (NPS & PPF)
+                        </h2>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {filteredSummaries
+                                .filter(s => ['nps', 'ppf'].includes(s.investment.investment_type))
+                                .map((s) => (
+                                    <div key={s.investment.id} className={darkTheme.card + " p-4"}>
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div>
+                                                <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
+                                                <div className="text-xs text-slate-400 uppercase tracking-wider">
+                                                    {s.investment.investment_type.toUpperCase()} • {s.account_name}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
+                                                <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
+                                                <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
+                                            <div>
+                                                <div className="text-[10px] text-slate-500 uppercase">Total Invested</div>
+                                                <div className="text-sm font-medium text-slate-100">{formatCurrency(s.total_invested)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-slate-500 uppercase">Contributions</div>
+                                                <div className="text-sm font-medium text-slate-300">{s.lots.length} deposits</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[10px] text-slate-500 uppercase">Type</div>
+                                                <div className="text-sm font-medium text-emerald-400">{s.investment.investment_type.toUpperCase()}</div>
+                                            </div>
+                                        </div>
+
+                                        {s.investment.monthly_deposit && (
+                                            <div className="mt-2 text-[10px] text-blue-400 text-right">
+                                                Monthly SIP: {formatCurrency(s.investment.monthly_deposit)}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-3 p-2 bg-emerald-900/20 rounded text-xs text-emerald-400 border border-emerald-800/30">
+                                            💡 Manage interest rates in Budget → NPS/PPF Rates tab
+                                        </div>
+                                    </div>
+                                ))}
+                            {filteredSummaries.filter(s => ['nps', 'ppf'].includes(s.investment.investment_type)).length === 0 && (
+                                <div className="text-slate-500 text-sm italic col-span-2">
+                                    No NPS/PPF investments. Add one using the "Add Investment" button.
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                )}
             </div>
 
             {/* Investment Form Modal */}
@@ -661,6 +721,8 @@ export default function Investments() {
                                             <option value="mf">Mutual Fund</option>
                                             <option value="fd">Fixed Deposit</option>
                                             <option value="rd">Recurring Deposit</option>
+                                            <option value="nps">NPS (National Pension)</option>
+                                            <option value="ppf">PPF (Public Provident Fund)</option>
                                         </select>
                                     </div>
                                 </div>

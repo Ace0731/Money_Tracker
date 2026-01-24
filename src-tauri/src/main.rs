@@ -54,6 +54,20 @@ fn main() {
             delete_investment_lot,
             get_live_market_price,
             get_project_payments,
+            // Budget commands
+            get_investment_rates,
+            add_investment_rate,
+            update_investment_rate,
+            delete_investment_rate,
+            get_budget_settings,
+            update_budget_settings,
+            get_monthly_income,
+            set_monthly_income,
+            get_budgets,
+            set_budget,
+            delete_budget,
+            get_budget_summary,
+            get_budget_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

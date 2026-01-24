@@ -19,7 +19,7 @@ export interface InvestmentLot {
 export interface Investment {
     id?: number;
     name: string;
-    investment_type: 'stock' | 'mf' | 'fd' | 'rd';
+    investment_type: 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf';
     account_id: number;
 
     // Stocks/MF specific
@@ -33,6 +33,10 @@ export interface Investment {
     maturity_date?: string;
     maturity_amount?: number;
     monthly_deposit?: number;
+
+    // Retirement (NPS/PPF) specific
+    retirement_age?: number;
+    current_age?: number;
 
     notes?: string;
     provider_symbol?: string;
@@ -145,4 +149,66 @@ export interface TransactionFilters {
     client_ids?: number[];
     project_ids?: number[];
     tag_ids?: number[];
+}
+
+// ============ BUDGET TYPES ============
+
+export interface InvestmentRate {
+    id?: number;
+    investment_type: string;
+    rate: number;
+    effective_date: string;
+    notes?: string;
+}
+
+export interface BudgetSettings {
+    salary_date: number;
+}
+
+export interface MonthlyIncome {
+    id?: number;
+    month: string;
+    expected_income: number;
+    notes?: string;
+}
+
+export interface Budget {
+    id?: number;
+    month: string;
+    category_id: number;
+    budgeted_amount: number;
+    notes?: string;
+}
+
+export interface CategoryBudgetSummary {
+    category_id: number;
+    category_name: string;
+    category_kind: string;
+    budgeted: number;
+    actual: number;
+    remaining: number;
+    is_over_budget: boolean;
+}
+
+export interface BudgetSummary {
+    month: string;
+    salary_date: number;
+    expected_income: number;
+    actual_income: number;
+    total_budgeted: number;
+    total_spent: number;
+    total_invested: number;
+    savings: number;
+    savings_rate: number;
+    income_categories: CategoryBudgetSummary[];
+    expense_categories: CategoryBudgetSummary[];
+}
+
+export interface MonthlyBudgetReport {
+    month: string;
+    income: number;
+    expenses: number;
+    investments: number;
+    savings: number;
+    savings_rate: number;
 }

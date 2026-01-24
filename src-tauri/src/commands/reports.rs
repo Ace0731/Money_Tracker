@@ -244,7 +244,7 @@ pub fn get_project_income_report(
     let mut report = Vec::new();
 
     for month in months {
-        let month_end = format!("{}-31", month); // Simplified end of month for comparison
+        let _month_end = format!("{}-31", month); // Simplified end of month for comparison
 
         // Get details for all projects active in or before this month that have non-zero balance or activity
         let mut detail_stmt = conn.prepare("

@@ -9,6 +9,7 @@ const navigation = [
     { name: 'Clients', path: '/clients', icon: '👥' },
     { name: 'Projects', path: '/projects', icon: '📋' },
     { name: 'Investments', path: '/investments', icon: '💰' },
+    { name: 'Budget', path: '/budget', icon: '🎯' },
     { name: 'Reports', path: '/reports', icon: '📈' },
 ];
 
@@ -51,7 +52,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 <div className="p-4 border-t border-slate-700">
                     <div className="text-xs text-slate-500 text-center">
-                        v1.2.3 • Local Only
+                        v1.3.0 • Local Only
                     </div>
                 </div>
             </div>

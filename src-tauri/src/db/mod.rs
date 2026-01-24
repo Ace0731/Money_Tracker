@@ -111,6 +111,64 @@ pub fn initialize_database() -> Result<DbConnection> {
         );
     }
     
+    // 8. Add retirement fields to investments
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN retirement_age INTEGER DEFAULT 60", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN current_age INTEGER", []);
+    
+    // 9. Create investment_rates table for NPS/PPF historical rates
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS investment_rates (
+            id INTEGER PRIMARY KEY,
+            investment_type TEXT NOT NULL,
+            rate REAL NOT NULL,
+            effective_date DATE NOT NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+    
+    // 10. Create budget tables
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS budget_settings (
+            id INTEGER PRIMARY KEY,
+            salary_date INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+    
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS monthly_income (
+            id INTEGER PRIMARY KEY,
+            month TEXT NOT NULL UNIQUE,
+            expected_income REAL NOT NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+    
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS budgets (
+            id INTEGER PRIMARY KEY,
+            month TEXT NOT NULL,
+            category_id INTEGER NOT NULL,
+            budgeted_amount REAL NOT NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(month, category_id),
+            FOREIGN KEY (category_id) REFERENCES categories(id)
+        )",
+        [],
+    );
+    
+    // Insert default budget settings if not exists
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO budget_settings (id, salary_date) VALUES (1, 1)",
+        [],
+    );
+    
     Ok(DbConnection(Mutex::new(conn)))
 }
 

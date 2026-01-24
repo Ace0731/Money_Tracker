@@ -420,11 +420,15 @@ pub async fn sync_investment_prices(db: State<'_, DbConnection>) -> Result<(), S
                 }
             }
         } else if inv_type == "stock" {
-            let url = format!("https://query1.finance.yahoo.com/v7/finance/quote?symbols={}", symbol);
+            let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1d&range=1d", symbol);
             if let Ok(resp) = client.get(&url).send().await {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(price) = json["quoteResponse"]["result"][0]["regularMarketPrice"].as_f64() {
-                        new_price = Some(price);
+                    if let Some(result) = json["chart"]["result"].as_array() {
+                        if !result.is_empty() {
+                            if let Some(price) = result[0]["meta"]["regularMarketPrice"].as_f64() {
+                                new_price = Some(price);
+                            }
+                        }
                     }
                 }
             }
