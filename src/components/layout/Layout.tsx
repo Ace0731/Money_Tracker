@@ -52,7 +52,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 <div className="p-4 border-t border-slate-700">
                     <div className="text-xs text-slate-500 text-center">
-                        v1.3.0 • Local Only
+                        v1.3.1 • Local Only
                     </div>
                 </div>
             </div>

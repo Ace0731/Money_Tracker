@@ -169,6 +169,9 @@ pub fn initialize_database() -> Result<DbConnection> {
         [],
     );
     
+    // 13. Add is_investment flag to categories
+    let _ = conn.execute("ALTER TABLE categories ADD COLUMN is_investment INTEGER DEFAULT 0", []);
+    
     Ok(DbConnection(Mutex::new(conn)))
 }
 

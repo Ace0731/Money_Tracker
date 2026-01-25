@@ -21,6 +21,7 @@ interface MonthlySummary {
     month: string;
     income: number;
     expense: number;
+    investment: number;
     net: number;
 }
 
@@ -39,6 +40,7 @@ interface ClientSummary {
 interface OverallStats {
     total_income: number;
     total_expense: number;
+    total_invested: number;
     net_balance: number;
     transaction_count: number;
 }
@@ -75,6 +77,8 @@ export default function Reports() {
     const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
     const [incomeCategories, setIncomeCategories] = useState<CategorySummary[]>([]);
     const [expenseCategories, setExpenseCategories] = useState<CategorySummary[]>([]);
+    const [investmentCategories, setInvestmentCategories] = useState<CategorySummary[]>([]);
+    const [categoryPieType, setCategoryPieType] = useState<'income' | 'expense' | 'investment'>('expense');
     const [clientSummary, setClientSummary] = useState<ClientSummary[]>([]);
     const [projectIncomeReport, setProjectIncomeReport] = useState<ProjectIncomeSummary[]>([]);
     const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
@@ -121,10 +125,11 @@ export default function Reports() {
                 project_id: filters.project_id || null,
             };
 
-            const [monthly, incCat, expCat, clientSum, projectInc, stats] = await Promise.all([
+            const [monthly, incCat, expCat, invCat, clientSum, projectInc, stats] = await Promise.all([
                 execute<MonthlySummary[]>('get_monthly_summary', { year: selectedYear, filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'income', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'expense', filters: backendFilters }),
+                execute<CategorySummary[]>('get_category_summary', { direction: 'investment', filters: backendFilters }),
                 execute<ClientSummary[]>('get_client_summary', { filters: backendFilters }),
                 execute<ProjectIncomeSummary[]>('get_project_income_report', { year: selectedYear }),
                 execute<OverallStats>('get_overall_stats', { filters: backendFilters }),
@@ -133,6 +138,7 @@ export default function Reports() {
             setMonthlySummary(monthly);
             setIncomeCategories(incCat);
             setExpenseCategories(expCat);
+            setInvestmentCategories(invCat);
             setClientSummary(clientSum);
             setProjectIncomeReport(projectInc);
             setOverallStats(stats);
@@ -213,7 +219,7 @@ export default function Reports() {
 
             {/* Overall Stats */}
             {overallStats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                     <div className={darkTheme.card + " p-6"}>
                         <div className="text-sm text-slate-400">Total Income</div>
                         <div className="text-2xl font-bold text-green-400 mt-2">
@@ -224,6 +230,12 @@ export default function Reports() {
                         <div className="text-sm text-slate-400">Total Expense</div>
                         <div className="text-2xl font-bold text-red-400 mt-2">
                             {formatCurrency(overallStats.total_expense)}
+                        </div>
+                    </div>
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="text-sm text-slate-400">Investments</div>
+                        <div className="text-2xl font-bold text-amber-400 mt-2">
+                            {formatCurrency(overallStats.total_invested)}
                         </div>
                     </div>
                     <div className={darkTheme.card + " p-6"}>
@@ -256,73 +268,90 @@ export default function Reports() {
                         <Legend />
                         <Bar dataKey="income" fill="#10b981" name="Income" />
                         <Bar dataKey="expense" fill="#ef4444" name="Expense" />
+                        <Bar dataKey="investment" fill="#f59e0b" name="Investment" />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
 
-            {/* Category Breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Income Categories */}
-                <div className={darkTheme.card + " p-6"}>
-                    <h2 className={darkTheme.subtitle + " mb-4 text-green-400"}>Income by Category</h2>
-                    {incomeCategories.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                                <Pie
-                                    data={incomeCategories}
-                                    dataKey="total"
-                                    nameKey="category_name"
-                                    cx="50%"
-                                    cy="50%"
-                                    outerRadius={100}
-                                    label={(entry) => `${entry.category_name}: ${formatCurrency(entry.total)}`}
-                                    labelLine={false}
-                                >
-                                    {incomeCategories.map((_, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
-                                    formatter={(value: number) => formatCurrency(value)}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className={darkTheme.empty}>No income transactions for filters</div>
-                    )}
+            {/* Category Breakdown with Selector */}
+            <div className={darkTheme.card + " p-6 mb-6"}>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className={darkTheme.subtitle}>Category Breakdown</h2>
+                    <select
+                        value={categoryPieType}
+                        onChange={(e) => setCategoryPieType(e.target.value as any)}
+                        className="bg-slate-900 text-sm text-slate-200 border border-slate-700 rounded px-3 py-1.5"
+                    >
+                        <option value="income">💵 Income</option>
+                        <option value="expense">💸 Expense</option>
+                        <option value="investment">📈 Investment</option>
+                    </select>
                 </div>
+                {(() => {
+                    const data = categoryPieType === 'income' ? incomeCategories
+                        : categoryPieType === 'expense' ? expenseCategories
+                            : investmentCategories;
+                    const colors = categoryPieType === 'investment'
+                        ? ['#f59e0b', '#fbbf24', '#d97706', '#f97316', '#ea580c']
+                        : COLORS;
+                    const titleColor = categoryPieType === 'income' ? 'text-green-400'
+                        : categoryPieType === 'expense' ? 'text-red-400'
+                            : 'text-amber-400';
+                    const emptyMessage = categoryPieType === 'investment'
+                        ? 'No investment categories. Mark categories as investments in Categories screen.'
+                        : `No ${categoryPieType} transactions for selected period.`;
 
-                {/* Expense Categories */}
-                <div className={darkTheme.card + " p-6"}>
-                    <h2 className={darkTheme.subtitle + " mb-4 text-red-400"}>Expense by Category</h2>
-                    {expenseCategories.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                                <Pie
-                                    data={expenseCategories}
-                                    dataKey="total"
-                                    nameKey="category_name"
-                                    cx="50%"
-                                    cy="50%"
-                                    outerRadius={100}
-                                    label={(entry) => `${entry.category_name}: ${formatCurrency(entry.total)}`}
-                                    labelLine={false}
-                                >
-                                    {expenseCategories.map((_, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
-                                    formatter={(value: number) => formatCurrency(value)}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    return data.length > 0 ? (
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="flex-1">
+                                <ResponsiveContainer width="100%" height={450}>
+                                    <PieChart>
+                                        <Pie
+                                            data={data}
+                                            dataKey="total"
+                                            nameKey="category_name"
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={80}
+                                            outerRadius={160}
+                                        >
+                                            {data.map((_, index) => (
+                                                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
+                                            formatter={(value: number) => formatCurrency(value)}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="lg:w-64 space-y-2">
+                                <div className={`text-sm font-bold uppercase ${titleColor} mb-3`}>
+                                    {categoryPieType.charAt(0).toUpperCase() + categoryPieType.slice(1)} Categories
+                                </div>
+                                {data.map((cat, index) => (
+                                    <div key={cat.category_name} className="flex items-center justify-between text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-3 h-3 rounded-sm"
+                                                style={{ backgroundColor: colors[index % colors.length] }}
+                                            />
+                                            <span className="text-slate-300 truncate max-w-[120px]">{cat.category_name}</span>
+                                        </div>
+                                        <span className="text-slate-400 font-mono">{formatCurrency(cat.total)}</span>
+                                    </div>
+                                ))}
+                                <div className="border-t border-slate-700 pt-2 mt-3 flex justify-between text-sm font-bold">
+                                    <span className="text-slate-400">Total</span>
+                                    <span className={titleColor}>{formatCurrency(data.reduce((sum, c) => sum + c.total, 0))}</span>
+                                </div>
+                            </div>
+                        </div>
                     ) : (
-                        <div className={darkTheme.empty}>No expense transactions for filters</div>
-                    )}
-                </div>
+                        <div className={darkTheme.empty}>{emptyMessage}</div>
+                    );
+                })()}
             </div>
 
             {/* Client Income */}
@@ -486,19 +515,10 @@ export default function Reports() {
                     </div>
                     <div className="p-4 bg-slate-900/50 rounded-lg">
                         <div className="text-slate-400 mb-1">Investment Rate</div>
-                        <div className="text-blue-400 font-bold">
-                            {(() => {
-                                const totalInvested = expenseCategories
-                                    .filter(c =>
-                                        (c.category_name.toLowerCase().includes('investment') && !c.category_name.toLowerCase().includes('self')) ||
-                                        c.category_name.toLowerCase().includes('money') ||
-                                        c.category_name.toLowerCase().includes('stable')
-                                    )
-                                    .reduce((acc, curr) => acc + curr.total, 0);
-                                return overallStats && overallStats.total_income > 0
-                                    ? ((totalInvested / overallStats.total_income) * 100).toFixed(1) + '%'
-                                    : '0%';
-                            })()}
+                        <div className="text-amber-400 font-bold">
+                            {overallStats && overallStats.total_income > 0
+                                ? ((overallStats.total_invested / overallStats.total_income) * 100).toFixed(1) + '%'
+                                : '0%'}
                         </div>
                     </div>
                     <div className="p-4 bg-slate-900/50 rounded-lg">

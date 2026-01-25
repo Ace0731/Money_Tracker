@@ -8,6 +8,7 @@ pub struct MonthlySummary {
     pub month: String,
     pub income: f64,
     pub expense: f64,
+    pub investment: f64,
     pub net: f64,
 }
 
@@ -46,6 +47,7 @@ pub struct ProjectIncomeSummary {
 pub struct OverallStats {
     pub total_income: f64,
     pub total_expense: f64,
+    pub total_invested: f64,
     pub net_balance: f64,
     pub transaction_count: i64,
 }
@@ -85,13 +87,16 @@ pub fn get_monthly_summary(
 ) -> Result<Vec<MonthlySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
+    // Query for income, expense, and investment per month
     let mut query = String::from("
         SELECT 
-            strftime('%Y-%m', date) as month,
-            SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) as income,
-            SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END) as expense
-        FROM transactions
-        WHERE strftime('%Y', date) = ?
+            strftime('%Y-%m', t.date) as month,
+            SUM(CASE WHEN t.direction = 'income' THEN t.amount ELSE 0 END) as income,
+            SUM(CASE WHEN t.direction = 'expense' THEN t.amount ELSE 0 END) as expense,
+            SUM(CASE WHEN COALESCE(c.is_investment, 0) = 1 THEN t.amount ELSE 0 END) as investment
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE strftime('%Y', t.date) = ?
     ");
     
     let mut params_vec: Vec<rusqlite::types::Value> = vec![year.to_string().into()];
@@ -105,11 +110,13 @@ pub fn get_monthly_summary(
         .query_map(rusqlite::params_from_iter(params_vec), |row| {
             let income: f64 = row.get(1)?;
             let expense: f64 = row.get(2)?;
+            let investment: f64 = row.get(3)?;
             Ok(MonthlySummary {
                 month: row.get(0)?,
                 income,
                 expense,
-                net: income - expense,
+                investment,
+                net: income - expense - investment,
             })
         })
         .map_err(|e| e.to_string())?
@@ -127,6 +134,38 @@ pub fn get_category_summary(
 ) -> Result<Vec<CategorySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
+    // Special handling for 'investment' - query categories marked as is_investment
+    if direction == "investment" {
+        let mut query = String::from("
+            SELECT c.name, COALESCE(SUM(t.amount), 0) as total, COUNT(t.id) as count
+            FROM categories c
+            LEFT JOIN transactions t ON t.category_id = c.id
+            WHERE COALESCE(c.is_investment, 0) = 1
+        ");
+        
+        let mut params_vec: Vec<rusqlite::types::Value> = vec![];
+        apply_filters(&mut query, &filters, &mut params_vec);
+        
+        query.push_str(" GROUP BY c.name HAVING total > 0 ORDER BY total DESC");
+        
+        let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+        
+        let summaries = stmt
+            .query_map(rusqlite::params_from_iter(params_vec), |row| {
+                Ok(CategorySummary {
+                    category_name: row.get(0)?,
+                    total: row.get(1)?,
+                    count: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        
+        return Ok(summaries);
+    }
+    
+    // Standard direction-based query (income/expense)
     let mut query = String::from("
         SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
         FROM transactions t
@@ -193,6 +232,7 @@ pub fn get_client_summary(db: State<DbConnection>, filters: ReportFilters) -> Re
 pub fn get_overall_stats(db: State<DbConnection>, filters: ReportFilters) -> Result<OverallStats, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
+    // Get income, expense, and transaction count
     let mut query = String::from("
         SELECT 
             SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) as total_income,
@@ -207,18 +247,38 @@ pub fn get_overall_stats(db: State<DbConnection>, filters: ReportFilters) -> Res
     
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
     
-    let stats = stmt.query_row(rusqlite::params_from_iter(params_vec), |row| {
-        let income: f64 = row.get(0).unwrap_or(0.0);
-        let expense: f64 = row.get(1).unwrap_or(0.0);
-        Ok(OverallStats {
-            total_income: income,
-            total_expense: expense,
-            net_balance: income - expense,
-            transaction_count: row.get(2).unwrap_or(0),
-        })
+    let (income, expense, count): (f64, f64, i64) = stmt.query_row(rusqlite::params_from_iter(params_vec.clone()), |row| {
+        Ok((
+            row.get(0).unwrap_or(0.0),
+            row.get(1).unwrap_or(0.0),
+            row.get(2).unwrap_or(0),
+        ))
     }).map_err(|e| e.to_string())?;
     
-    Ok(stats)
+    // Get total invested (transactions in categories marked as is_investment)
+    let mut invest_query = String::from("
+        SELECT COALESCE(SUM(t.amount), 0)
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE COALESCE(c.is_investment, 0) = 1
+    ");
+    
+    let mut invest_params: Vec<rusqlite::types::Value> = vec![];
+    apply_filters(&mut invest_query, &filters, &mut invest_params);
+    
+    let total_invested: f64 = conn.query_row(
+        &invest_query,
+        rusqlite::params_from_iter(invest_params),
+        |row| row.get(0)
+    ).unwrap_or(0.0);
+    
+    Ok(OverallStats {
+        total_income: income,
+        total_expense: expense,
+        total_invested,
+        net_balance: income - expense - total_invested,
+        transaction_count: count,
+    })
 }
 
 #[tauri::command]

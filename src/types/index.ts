@@ -69,6 +69,7 @@ export interface Category {
     name: string;
     kind: 'income' | 'expense' | 'transfer';
     notes?: string;
+    is_investment: boolean;
 }
 
 export interface Client {
@@ -202,6 +203,7 @@ export interface BudgetSummary {
     savings_rate: number;
     income_categories: CategoryBudgetSummary[];
     expense_categories: CategoryBudgetSummary[];
+    investment_categories: CategoryBudgetSummary[];
 }
 
 export interface MonthlyBudgetReport {

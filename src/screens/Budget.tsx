@@ -23,7 +23,8 @@ export default function BudgetScreen() {
     const [investmentRates, setInvestmentRates] = useState<InvestmentRate[]>([]);
     const [rateForm, setRateForm] = useState<InvestmentRate>({ investment_type: 'nps', rate: 10, effective_date: new Date().toISOString().split('T')[0] });
     const [activeTab, setActiveTab] = useState<'overview' | 'reports' | 'rates'>('overview');
-    const [budgetType, setBudgetType] = useState<'income' | 'expense'>('expense');
+    const [budgetType, setBudgetType] = useState<'income' | 'expense' | 'transfer'>('expense');
+    const [pieChartType, setPieChartType] = useState<'expense' | 'income' | 'investment'>('expense');
 
     useEffect(() => {
         loadData();
@@ -91,7 +92,7 @@ export default function BudgetScreen() {
         }
     };
 
-    const openBudgetModal = (categoryId: number, kind: 'income' | 'expense', currentBudget: number = 0) => {
+    const openBudgetModal = (categoryId: number, kind: 'income' | 'expense' | 'transfer', currentBudget: number = 0) => {
         setBudgetType(kind);
         setBudgetForm({ month: selectedMonth, category_id: categoryId, budgeted_amount: currentBudget });
         setShowBudgetModal(true);
@@ -112,10 +113,18 @@ export default function BudgetScreen() {
         return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     };
 
-    const pieData = summary?.expense_categories.filter(c => c.actual > 0).map(c => ({
-        name: c.category_name,
-        value: c.actual
-    })) || [];
+    // Dynamic pie data based on selection
+    const getPieData = () => {
+        if (!summary) return [];
+        if (pieChartType === 'expense') {
+            return summary.expense_categories.filter(c => c.actual > 0).map(c => ({ name: c.category_name, value: c.actual }));
+        } else if (pieChartType === 'income') {
+            return summary.income_categories.filter(c => c.actual > 0).map(c => ({ name: c.category_name, value: c.actual }));
+        } else {
+            return summary.investment_categories.filter(c => c.actual > 0).map(c => ({ name: c.category_name, value: c.actual }));
+        }
+    };
+    const pieData = getPieData();
 
     // Calculate totals for income section
     const totalExpectedIncome = summary?.income_categories.reduce((sum, c) => sum + c.budgeted, 0) || 0;
@@ -252,7 +261,49 @@ export default function BudgetScreen() {
                         </div>
                     </section>
 
-                    {/* ========== SAVINGS SECTION ========== */}
+                    {/* ========== INVESTMENTS SECTION ========== */}
+                    <section className={darkTheme.card + " p-4"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-bold text-amber-400 flex items-center gap-2">
+                                <span>📈</span> Investments
+                            </h2>
+                            <div className="text-right">
+                                <div className="text-xs text-slate-500">Expected vs Actual</div>
+                                <div className="text-sm">
+                                    <span className="text-slate-400">{formatCurrency(summary.investment_categories.reduce((sum, c) => sum + c.budgeted, 0))}</span>
+                                    <span className="text-slate-600 mx-1">/</span>
+                                    <span className="text-amber-400 font-bold">{formatCurrency(summary.total_invested)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {summary.investment_categories.map(cat => (
+                                <div
+                                    key={cat.category_id}
+                                    className="bg-slate-900/50 rounded-lg p-3 cursor-pointer hover:bg-slate-800/50 transition-colors border border-slate-700/50"
+                                    onClick={() => openBudgetModal(cat.category_id, 'transfer', cat.budgeted)}
+                                >
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm font-medium text-slate-300">{cat.category_name}</span>
+                                        <span className="text-xs text-slate-500">✏️</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-slate-500">Expected: {formatCurrency(cat.budgeted)}</span>
+                                        <span className="text-amber-400 font-medium">Actual: {formatCurrency(cat.actual)}</span>
+                                    </div>
+                                    <div className="h-1.5 bg-slate-800 rounded-full mt-2 overflow-hidden">
+                                        <div
+                                            className="h-full bg-amber-500"
+                                            style={{ width: `${Math.min((cat.actual / (cat.budgeted || 1)) * 100, 100)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            {summary.investment_categories.length === 0 && (
+                                <div className="text-slate-500 text-sm italic col-span-3">No investment categories found.</div>
+                            )}
+                        </div>
+                    </section>                    {/* ========== SAVINGS SECTION ========== */}
                     <section className={darkTheme.card + " p-4"}>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-lg font-bold text-blue-400 flex items-center gap-2">
@@ -286,9 +337,20 @@ export default function BudgetScreen() {
                     </section>
 
                     {/* Pie Chart */}
-                    {pieData.length > 0 && (
-                        <section className={darkTheme.card + " p-6"}>
-                            <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">Expense Breakdown</h3>
+                    <section className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-sm font-bold text-slate-400 uppercase">Category Breakdown</h3>
+                            <select
+                                value={pieChartType}
+                                onChange={(e) => setPieChartType(e.target.value as any)}
+                                className="bg-slate-900 text-sm text-slate-200 border border-slate-700 rounded px-3 py-1"
+                            >
+                                <option value="expense">💸 Expenses</option>
+                                <option value="income">💵 Income</option>
+                                <option value="investment">📈 Investments</option>
+                            </select>
+                        </div>
+                        {pieData.length > 0 ? (
                             <ResponsiveContainer width="100%" height={400}>
                                 <PieChart>
                                     <Pie data={pieData} innerRadius={80} outerRadius={150} dataKey="value" paddingAngle={2}>
@@ -298,8 +360,10 @@ export default function BudgetScreen() {
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                                 </PieChart>
                             </ResponsiveContainer>
-                        </section>
-                    )}
+                        ) : (
+                            <div className="text-center text-slate-500 py-12">No {pieChartType} data for this period</div>
+                        )}
+                    </section>
                 </div>
             )}
 

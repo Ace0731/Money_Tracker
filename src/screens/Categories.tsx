@@ -11,6 +11,7 @@ export default function Categories() {
         name: '',
         kind: 'expense',
         notes: '',
+        is_investment: false,
     });
 
     useEffect(() => {
@@ -36,7 +37,7 @@ export default function Categories() {
             }
             await loadCategories();
             setShowForm(false);
-            setFormData({ name: '', kind: 'expense', notes: '' });
+            setFormData({ name: '', kind: 'expense', notes: '', is_investment: false });
         } catch (error) {
             console.error('Failed to save category:', error);
         }
@@ -59,7 +60,7 @@ export default function Categories() {
                 <h1 className={darkTheme.title}>Categories</h1>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', kind: 'expense', notes: '' });
+                        setFormData({ name: '', kind: 'expense', notes: '', is_investment: false });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}
@@ -83,6 +84,7 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-green-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-green-400/70 mt-1">{category.notes}</p>}
+                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
                             </div>
                         ))}
                     </div>
@@ -100,6 +102,7 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-red-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-red-400/70 mt-1">{category.notes}</p>}
+                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
                             </div>
                         ))}
                     </div>
@@ -117,6 +120,7 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-blue-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-blue-400/70 mt-1">{category.notes}</p>}
+                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
                             </div>
                         ))}
                     </div>
@@ -166,6 +170,19 @@ export default function Categories() {
                                     rows={3}
                                     placeholder="Optional notes..."
                                 />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="is_investment"
+                                    checked={formData.is_investment || false}
+                                    onChange={(e) => setFormData({ ...formData, is_investment: e.target.checked })}
+                                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500"
+                                />
+                                <label htmlFor="is_investment" className="text-sm text-slate-300">
+                                    📈 Mark as Investment (shows in Budget → Investments)
+                                </label>
                             </div>
 
                             <div className="flex justify-end gap-2 pt-4">

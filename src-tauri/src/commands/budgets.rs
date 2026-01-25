@@ -240,6 +240,7 @@ pub struct BudgetSummary {
     pub savings_rate: f64,
     pub income_categories: Vec<CategoryBudgetSummary>,
     pub expense_categories: Vec<CategoryBudgetSummary>,
+    pub investment_categories: Vec<CategoryBudgetSummary>,
 }
 
 #[tauri::command]
@@ -273,15 +274,6 @@ pub fn get_budget_summary(db: State<DbConnection>, month: String) -> Result<Budg
     // Get total expenses
     let total_spent: f64 = conn.query_row(
         "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE direction = 'expense' AND date >= ?1 AND date <= ?2",
-        params![start_date, end_date],
-        |r| r.get(0)
-    ).unwrap_or(0.0);
-    
-    // Get total investments (transfers to investment accounts)
-    let total_invested: f64 = conn.query_row(
-        "SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
-         JOIN accounts a ON t.to_account_id = a.id
-         WHERE t.direction = 'transfer' AND a.type = 'investment' AND t.date >= ?1 AND t.date <= ?2",
         params![start_date, end_date],
         |r| r.get(0)
     ).unwrap_or(0.0);
@@ -348,8 +340,41 @@ pub fn get_budget_summary(db: State<DbConnection>, month: String) -> Result<Budg
     ).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
     
+    // Get INVESTMENT category budgets with actuals (categories marked as investments)
+    let mut investment_stmt = conn.prepare(
+        "SELECT c.id, c.name, c.kind, COALESCE(b.budgeted_amount, 0) as budgeted,
+                COALESCE(SUM(CASE WHEN t.date >= ?2 AND t.date <= ?3 THEN t.amount ELSE 0 END), 0) as actual
+         FROM categories c
+         LEFT JOIN budgets b ON c.id = b.category_id AND b.month = ?1
+         LEFT JOIN transactions t ON c.id = t.category_id
+         WHERE COALESCE(c.is_investment, 0) = 1
+         GROUP BY c.id, c.name, c.kind, b.budgeted_amount
+         ORDER BY c.name"
+    ).map_err(|e| e.to_string())?;
+    
+    let investment_categories: Vec<CategoryBudgetSummary> = investment_stmt.query_map(
+        params![month, start_date, end_date],
+        |row| {
+            let budgeted: f64 = row.get(3)?;
+            let actual: f64 = row.get(4)?;
+            let remaining = budgeted - actual;
+            Ok(CategoryBudgetSummary {
+                category_id: row.get(0)?,
+                category_name: row.get(1)?,
+                category_kind: row.get(2)?,
+                budgeted,
+                actual,
+                remaining,
+                is_over_budget: actual > budgeted && budgeted > 0.0,
+            })
+        }
+    ).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    
     let total_budgeted: f64 = expense_categories.iter().map(|c| c.budgeted).sum();
-    let savings = actual_income - total_spent - total_invested;
+    let total_investment_budgeted: f64 = investment_categories.iter().map(|c| c.budgeted).sum();
+    let total_actual_invested: f64 = investment_categories.iter().map(|c| c.actual).sum();
+    let savings = actual_income - total_spent - total_actual_invested;
     let savings_rate = if actual_income > 0.0 { (savings / actual_income) * 100.0 } else { 0.0 };
     
     Ok(BudgetSummary {
@@ -357,13 +382,14 @@ pub fn get_budget_summary(db: State<DbConnection>, month: String) -> Result<Budg
         salary_date,
         expected_income,
         actual_income,
-        total_budgeted,
+        total_budgeted: total_budgeted + total_investment_budgeted,
         total_spent,
-        total_invested,
+        total_invested: total_actual_invested,
         savings,
         savings_rate,
         income_categories,
         expense_categories,
+        investment_categories,
     })
 }
 
