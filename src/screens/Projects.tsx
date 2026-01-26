@@ -20,6 +20,7 @@ export default function Projects() {
         end_date: '',
         notes: '',
         completed: false,
+        status: 'active',
     });
 
     // Time Log State
@@ -84,6 +85,7 @@ export default function Projects() {
                 end_date: '',
                 notes: '',
                 completed: false,
+                status: 'active',
             });
         } catch (error) {
             console.error('Failed to save project:', error);
@@ -213,6 +215,7 @@ export default function Projects() {
                             end_date: '',
                             notes: '',
                             completed: false,
+                            status: 'active',
                         });
                         setShowForm(true);
                     }}
@@ -229,7 +232,7 @@ export default function Projects() {
                 <div>
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {projects.filter(p => !p.completed).map((project) => (
+                        {projects.filter(p => p.status === 'active' || p.status === 'on_hold' || p.status === 'prospect').map((project) => (
                             <div
                                 key={project.id}
                                 className={`${darkTheme.card} p-6 cursor-pointer relative group`}
@@ -240,6 +243,18 @@ export default function Projects() {
                                     {project.expected_amount && (
                                         <span className="text-sm font-bold text-green-400">
                                             {formatCurrency(project.expected_amount)}
+                                        </span>
+                                    )}
+                                    {project.status && project.status !== 'active' && (
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${project.status === 'on_hold' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                project.status === 'prospect' ? 'bg-purple-500/20 text-purple-400' :
+                                                    project.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
+                                                        'bg-slate-500/20 text-slate-400'
+                                            }`}>
+                                            {project.status === 'on_hold' ? '⏸️ On Hold' :
+                                                project.status === 'prospect' ? '🎯 Prospect' :
+                                                    project.status === 'cancelled' ? '❌ Cancelled' :
+                                                        project.status}
                                         </span>
                                     )}
                                 </div>
@@ -343,7 +358,7 @@ export default function Projects() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {projects.filter(p => p.completed).map((project) => (
+                                        {projects.filter(p => p.status === 'completed' || p.status === 'cancelled').map((project) => (
                                             <tr key={project.id} className="hover:bg-slate-700/30 transition-colors">
                                                 <td className="px-4 py-3 text-slate-200 font-bold">{project.name}</td>
                                                 <td className="px-4 py-3 text-blue-400 text-sm">{getClientName(project.client_id)}</td>
@@ -490,17 +505,19 @@ export default function Projects() {
                                 />
                             </div>
 
-                            <div className="flex items-center gap-2 py-2">
-                                <input
-                                    type="checkbox"
-                                    id="completed"
-                                    checked={formData.completed || false}
-                                    onChange={(e) => setFormData({ ...formData, completed: e.target.checked })}
-                                    className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-800"
-                                />
-                                <label htmlFor="completed" className="text-sm font-medium text-slate-200">
-                                    Project Completed
-                                </label>
+                            <div>
+                                <label className={darkTheme.label}>Status</label>
+                                <select
+                                    value={formData.status || 'active'}
+                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any, completed: e.target.value === 'completed' })}
+                                    className={darkTheme.select}
+                                >
+                                    <option value="active">🟢 Active</option>
+                                    <option value="on_hold">⏸️ On Hold</option>
+                                    <option value="prospect">🎯 Prospect</option>
+                                    <option value="completed">✅ Completed</option>
+                                    <option value="cancelled">❌ Cancelled</option>
+                                </select>
                             </div>
 
                             <div className="flex justify-end gap-2 pt-4">

@@ -1,76 +1,186 @@
-# Money Tracker
+# 💰 Money Tracker
 
-A local-only personal finance tracker built with React, Tauri, and SQLite.
+A powerful, **100% local** personal finance tracker for freelancers and individuals. Built with React, Tauri, and SQLite.
 
-## Features
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+![License](https://img.shields.io/badge/license-Private-red)
 
-- 💰 Track every transaction (income, expense, transfers)
-- 📊 Visual reports and dashboards
-- 👥 Client and project management
-- 🏷️ Multi-tag support
-- 🔒 100% local - no cloud, no internet required
-- 📁 Export/Import (CSV, JSON, DB file)
+---
 
-## Tech Stack
+## ✨ Features
 
-- **Frontend**: React + TypeScript + Tailwind CSS
-- **Desktop**: Tauri (Rust)
-- **Database**: SQLite
-- **Charts**: Recharts
-- **State**: Zustand
+### � Transaction Management
+- Track income, expenses, and transfers
+- Multi-account support (Bank, Cash, Credit, Investment)
+- Multi-tag support for detailed categorization
+- Recurring transactions
+- CSV/JSON import & export
 
-## Prerequisites
+### 📊 Reports & Analytics
+- Interactive dashboards with charts
+- Monthly/yearly summaries
+- Category-wise spending breakdown
+- Account balance tracking
+- Client & project profitability reports
 
-Before running this project, ensure you have:
+### 👥 Freelance Management
+- **Clients** with status tracking (🟢 Active | 🎯 Prospect | 💤 Inactive)
+- **Projects** with status (🟢 Active | ⏸️ On Hold | 🎯 Prospect | ✅ Completed | ❌ Cancelled)
+- Link transactions to clients & projects
+- Track project-wise income
 
-- Node.js (v18+)
+### 📈 Investment Portfolio
+Track your investments with smart calculations:
+
+| Type | Features |
+|------|----------|
+| **Stocks & MF** | Live price sync, lot tracking, P&L |
+| **Fixed Deposit** | Compound interest calculator |
+| **Recurring Deposit** | Monthly deposit tracking |
+| **PPF** | 7.1% annual, maturity countdown |
+| **NPS** | Live NAV fetch from npsnav.in |
+
+### 🏷️ Organization
+- Customizable categories with icons
+- Unlimited tags per transaction
+- Notes and attachments support
+- Search & filter everything
+
+### 🔒 Privacy First
+- **100% Local** - No cloud, no internet required
+- SQLite database stored on your machine
+- Full data export (CSV, JSON, DB backup)
+- No telemetry, no tracking
+
+---
+
+## 🖥️ Screenshots
+
+<details>
+<summary>Click to view screenshots</summary>
+
+*Screenshots coming soon*
+
+</details>
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18 + TypeScript |
+| Styling | Tailwind CSS |
+| Desktop | Tauri 2.0 (Rust) |
+| Database | SQLite |
+| Charts | Recharts |
+| State | Zustand |
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+- Node.js v18+
 - Rust (latest stable)
 - npm or yarn
 
-## Installation
-
+### Development
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/money-tracker.git
+
 # Install dependencies
 npm install
 
 # Run in development mode
 npm run tauri dev
+```
 
-# Build for production
+### Production Build
+```bash
 npm run tauri build
 ```
 
-## Project Structure
+The installer will be created in `src-tauri/target/release/bundle/`.
+
+---
+
+## 📁 Project Structure
 
 ```
 money-tracker/
-├── src/                    # React frontend
-│   ├── components/         # UI components
-│   ├── screens/           # Main screens
-│   ├── store/             # Zustand state
-│   └── utils/             # Utilities
-├── src-tauri/             # Tauri backend (Rust)
+├── src/                        # React frontend
+│   ├── components/             # Reusable UI components
+│   ├── screens/                # Main application screens
+│   ├── hooks/                  # Custom React hooks
+│   ├── store/                  # Zustand state management
+│   ├── utils/                  # Utilities & helpers
+│   │   ├── formatters.ts       # Currency/date formatting
+│   │   ├── theme.ts            # Dark theme styles
+│   │   └── investmentCalculations.ts  # FD/RD/PPF/NPS formulas
+│   └── types/                  # TypeScript interfaces
+├── src-tauri/                  # Tauri backend (Rust)
 │   └── src/
-│       ├── commands/      # Tauri commands
-│       └── db/            # Database logic
-└── database/              # SQL schema
+│       ├── commands/           # Tauri IPC commands
+│       │   ├── transactions.rs
+│       │   ├── accounts.rs
+│       │   ├── investments.rs
+│       │   ├── clients.rs
+│       │   └── projects.rs
+│       └── db/                 # Database migrations
+└── public/                     # Static assets
 ```
 
-## Database Schema
+---
 
-The database uses SQLite with the following tables:
-- `accounts` - Bank/cash/investment accounts
-- `categories` - Income/expense categories
-- `transactions` - All money movements
-- `clients` - Freelance clients
-- `projects` - Client projects
-- `tags` - Transaction tags
-- `transaction_tags` - Many-to-many relationship
+## 🗄️ Database Schema
 
-## Development
+| Table | Description |
+|-------|-------------|
+| `accounts` | Bank, cash, credit, investment accounts |
+| `categories` | Income/expense categories with icons |
+| `transactions` | All money movements |
+| `investments` | FD, RD, PPF, NPS, stocks, mutual funds |
+| `investment_lots` | Buy/sell records for investments |
+| `nps_units` | NPS unit history |
+| `clients` | Freelance clients with status |
+| `projects` | Client projects with status |
+| `tags` | Custom tags |
+| `transaction_tags` | Transaction-tag mappings |
 
-The app runs entirely locally. All data is stored in `money_tracker.db` in the app directory.
+---
 
-## License
+## 🔄 Version History
 
-Private use only.
+### v1.4.0 (Current)
+- Project & Client status tracking
+- Investment portfolio with FD/RD/PPF/NPS calculations
+- Live NPS NAV fetch from npsnav.in
+- Enhanced investment display cards
+
+### v1.3.1
+- Bug fixes and performance improvements
+- UI enhancements
+
+### v1.3.0
+- Investment lot tracking
+- Live stock/MF price sync
+- Platform-wise investment summary
+
+---
+
+## 📝 License
+
+Private use only. Not for redistribution.
+
+---
+
+## 🤝 Contributing
+
+This is a personal project. Contributions are not currently accepted.
+
+---
+
+Made with ❤️ for personal finance management

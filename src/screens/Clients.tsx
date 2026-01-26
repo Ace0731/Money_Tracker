@@ -10,6 +10,7 @@ export default function Clients() {
     const [formData, setFormData] = useState<Client>({
         name: '',
         notes: '',
+        status: 'active',
     });
 
     useEffect(() => {
@@ -35,7 +36,7 @@ export default function Clients() {
             }
             await loadClients();
             setShowForm(false);
-            setFormData({ name: '', notes: '' });
+            setFormData({ name: '', notes: '', status: 'active' });
         } catch (error) {
             console.error('Failed to save client:', error);
         }
@@ -52,7 +53,7 @@ export default function Clients() {
                 <h1 className={darkTheme.title}>Clients</h1>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', notes: '' });
+                        setFormData({ name: '', notes: '', status: 'active' });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}
@@ -70,7 +71,19 @@ export default function Clients() {
                         className={`${darkTheme.card} p-6 cursor-pointer`}
                         onClick={() => handleEdit(client)}
                     >
-                        <h3 className="text-xl font-bold text-slate-100 mb-2">{client.name}</h3>
+                        <h3 className="text-xl font-bold text-slate-100 mb-2">
+                            {client.name}
+                            {client.status && client.status !== 'active' && (
+                                <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold ${client.status === 'inactive' ? 'bg-slate-500/20 text-slate-400' :
+                                        client.status === 'prospect' ? 'bg-purple-500/20 text-purple-400' :
+                                            'bg-slate-500/20 text-slate-400'
+                                    }`}>
+                                    {client.status === 'inactive' ? '💤 Inactive' :
+                                        client.status === 'prospect' ? '🎯 Prospect' :
+                                            client.status}
+                                </span>
+                            )}
+                        </h3>
                         {client.notes && <p className="text-sm text-slate-400">{client.notes}</p>}
                     </div>
                 ))}
@@ -111,6 +124,19 @@ export default function Clients() {
                                     rows={3}
                                     placeholder="Contact details, requirements, etc."
                                 />
+                            </div>
+
+                            <div>
+                                <label className={darkTheme.label}>Status</label>
+                                <select
+                                    value={formData.status || 'active'}
+                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                                    className={darkTheme.select}
+                                >
+                                    <option value="active">🟢 Active</option>
+                                    <option value="prospect">🎯 Prospect</option>
+                                    <option value="inactive">💤 Inactive</option>
+                                </select>
                             </div>
 
                             <div className="flex justify-end gap-2 pt-4">

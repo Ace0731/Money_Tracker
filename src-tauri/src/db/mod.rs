@@ -172,6 +172,43 @@ pub fn initialize_database() -> Result<DbConnection> {
     // 13. Add is_investment flag to categories
     let _ = conn.execute("ALTER TABLE categories ADD COLUMN is_investment INTEGER DEFAULT 0", []);
     
+    // 14. Add status to projects (replaces 'completed' boolean)
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active'", []);
+    // Migrate completed boolean to status
+    let _ = conn.execute(
+        "UPDATE projects SET status = CASE WHEN completed = 1 THEN 'completed' ELSE 'active' END WHERE status IS NULL OR status = 'active'",
+        []
+    );
+    
+    // 15. Add status to clients
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'", []);
+    
+    // 16. Add category_id to investments for auto-tracking deposits
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN category_id INTEGER REFERENCES categories(id)", []);
+    
+    // 17. Add tenure_months and opening_date to investments
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN tenure_months INTEGER", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN opening_date DATE", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN compounding TEXT DEFAULT 'quarterly'", []);
+    let _ = conn.execute("ALTER TABLE investments ADD COLUMN bank_name TEXT", []);
+    
+    // 18. Create nps_units table for unit-wise NPS tracking
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS nps_units (
+            id INTEGER PRIMARY KEY,
+            investment_id INTEGER NOT NULL,
+            transaction_id INTEGER,
+            date DATE NOT NULL,
+            amount REAL NOT NULL,
+            nav REAL NOT NULL,
+            units REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (investment_id) REFERENCES investments(id),
+            FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+        )",
+        [],
+    );
+    
     Ok(DbConnection(Mutex::new(conn)))
 }
 

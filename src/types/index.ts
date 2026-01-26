@@ -27,12 +27,19 @@ export interface Investment {
     avg_buy_price?: number;
     current_price?: number;
 
-    // FD/RD specific
+    // FD/RD/PPF specific
     principal_amount?: number;
     interest_rate?: number;
     maturity_date?: string;
     maturity_amount?: number;
     monthly_deposit?: number;
+    tenure_months?: number;
+    opening_date?: string;
+    compounding?: 'monthly' | 'quarterly' | 'yearly';
+    bank_name?: string;
+
+    // Category link for auto-tracking deposits
+    category_id?: number;
 
     // Retirement (NPS/PPF) specific
     retirement_age?: number;
@@ -76,6 +83,7 @@ export interface Client {
     id?: number;
     name: string;
     notes?: string;
+    status?: 'active' | 'inactive' | 'prospect';
     created_at?: string;
 }
 
@@ -89,6 +97,7 @@ export interface Project {
     end_date?: string;
     notes?: string;
     completed?: boolean;
+    status?: 'active' | 'completed' | 'cancelled' | 'on_hold' | 'prospect';
     // Computed fields
     received_amount?: number;
     spent_amount?: number;

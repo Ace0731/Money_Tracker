@@ -5,6 +5,14 @@ import { formatCurrency, formatUnits } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import Swal from 'sweetalert2';
+import {
+    calculateFDMaturity,
+    calculateRDMaturity,
+    calculatePPFBalance,
+    calculateNPSValue,
+    fetchNPSNAV,
+    getDaysRemaining
+} from '../utils/investmentCalculations';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
@@ -286,37 +294,70 @@ export default function Investments() {
     };
 
     const calculateMaturity = () => {
-        if (!formData.interest_rate || !formData.maturity_date) return;
+        if (!formData.interest_rate) return;
 
-        const startDate = new Date();
-        const endDate = new Date(formData.maturity_date);
-        const diffYears = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-        if (diffYears <= 0) return;
+        // Calculate months from tenure or maturity date
+        let tenureMonths = formData.tenure_months || 12;
+        if (formData.maturity_date) {
+            const startDate = formData.opening_date ? new Date(formData.opening_date) : new Date();
+            const endDate = new Date(formData.maturity_date);
+            tenureMonths = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+        }
+        if (tenureMonths <= 0) return;
 
-        let principal = 0;
-        if (formData.id) {
+        let principal = formData.principal_amount || 0;
+        if (formData.id && !principal) {
             const summary = summaries.find(s => s.investment.id === formData.id);
             principal = summary?.total_invested || 0;
         }
 
+        const compounding = formData.compounding || 'quarterly';
+
         if (formData.investment_type === 'fd' && principal > 0) {
-            // Quarterly compounding: A = P(1 + r/400)^(4*t)
-            const amount = principal * Math.pow(1 + (formData.interest_rate / 400), 4 * diffYears);
-            setFormData(prev => ({ ...prev, maturity_amount: Number(amount.toFixed(2)) }));
+            const result = calculateFDMaturity(principal, formData.interest_rate, tenureMonths, compounding);
+            setFormData(prev => ({ ...prev, maturity_amount: result.maturityAmount }));
         } else if (formData.investment_type === 'rd' && formData.monthly_deposit) {
-            // RD Formula: A = P * ((1+i)^n - 1) / i * (1+i)
-            const months = Math.max(1, Math.round(diffYears * 12));
-            const i = formData.interest_rate / 1200;
-            const amount = formData.monthly_deposit * (Math.pow(1 + i, months) - 1) / i * (1 + i);
-            setFormData(prev => ({ ...prev, maturity_amount: Number(amount.toFixed(2)) }));
+            const result = calculateRDMaturity(formData.monthly_deposit, formData.interest_rate, tenureMonths, compounding === 'monthly' ? 'monthly' : 'quarterly');
+            setFormData(prev => ({ ...prev, maturity_amount: result.maturityAmount }));
+        } else if (formData.investment_type === 'ppf' && principal > 0) {
+            const yearsCompleted = Math.floor(tenureMonths / 12);
+            const result = calculatePPFBalance(principal, yearsCompleted, formData.interest_rate);
+            setFormData(prev => ({ ...prev, maturity_amount: result.currentBalance }));
         }
     };
 
+    // Fetch NPS NAV from API
+    const handleFetchNPSNAV = async () => {
+        if (!formData.provider_symbol) {
+            Swal.fire('Error', 'Please select a fund manager and scheme type first', 'warning');
+            return;
+        }
+
+        setFetchingPrice(true);
+        try {
+            const navData = await fetchNPSNAV(formData.provider_symbol);
+            if (navData) {
+                setFormData(prev => ({
+                    ...prev,
+                    current_price: navData.nav,
+                    last_updated_at: navData.date
+                }));
+                Swal.fire('Success', `Current NAV: ₹${navData.nav} (as of ${navData.date})`, 'success');
+            } else {
+                Swal.fire('Error', 'Could not fetch NAV. Please try again later.', 'error');
+            }
+        } catch (error) {
+            console.error('Failed to fetch NPS NAV:', error);
+            Swal.fire('Error', 'Failed to fetch NAV', 'error');
+        }
+        setFetchingPrice(false);
+    };
+
     useEffect(() => {
-        if (showForm && (formData.investment_type === 'fd' || formData.investment_type === 'rd')) {
+        if (showForm && (formData.investment_type === 'fd' || formData.investment_type === 'rd' || formData.investment_type === 'ppf')) {
             calculateMaturity();
         }
-    }, [formData.interest_rate, formData.maturity_date, formData.monthly_deposit, formData.investment_type, showForm]);
+    }, [formData.interest_rate, formData.maturity_date, formData.monthly_deposit, formData.investment_type, formData.principal_amount, formData.tenure_months, formData.compounding, showForm]);
 
     const getChartData = () => {
         const dataSource = timeFilteredSummaries;
@@ -637,48 +678,95 @@ export default function Investments() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {filteredSummaries
                                 .filter(s => ['nps', 'ppf'].includes(s.investment.investment_type))
-                                .map((s) => (
-                                    <div key={s.investment.id} className={darkTheme.card + " p-4"}>
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
-                                                <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                    {s.investment.investment_type.toUpperCase()} • {s.account_name}
+                                .map((s) => {
+                                    // Calculate NPS value if NAV available
+                                    const npsValue = s.investment.investment_type === 'nps' && s.total_units && s.investment.current_price
+                                        ? calculateNPSValue(s.total_units, s.investment.current_price, s.total_invested)
+                                        : null;
+
+                                    // Calculate PPF estimated balance
+                                    const ppfBalance = s.investment.investment_type === 'ppf' && s.investment.opening_date
+                                        ? calculatePPFBalance(
+                                            s.total_invested,
+                                            Math.floor((new Date().getTime() - new Date(s.investment.opening_date).getTime()) / (1000 * 60 * 60 * 24 * 365)),
+                                            s.investment.interest_rate || 7.1
+                                        )
+                                        : null;
+
+                                    const daysToMaturity = s.investment.maturity_date ? getDaysRemaining(s.investment.maturity_date) : null;
+
+                                    return (
+                                        <div key={s.investment.id} className={darkTheme.card + " p-4"}>
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
+                                                    <div className="text-xs text-slate-400 uppercase tracking-wider">
+                                                        {s.investment.investment_type.toUpperCase()} • {s.account_name}
+                                                        {s.investment.bank_name && ` • ${s.investment.bank_name}`}
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
+                                                    <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
+                                                    <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
-                                                <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
-                                                <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
-                                            </div>
-                                        </div>
 
-                                        <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Total Invested</div>
-                                                <div className="text-sm font-medium text-slate-100">{formatCurrency(s.total_invested)}</div>
+                                            <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
+                                                <div>
+                                                    <div className="text-[10px] text-slate-500 uppercase">Total Invested</div>
+                                                    <div className="text-sm font-medium text-slate-100">{formatCurrency(s.total_invested)}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] text-slate-500 uppercase">
+                                                        {s.investment.investment_type === 'nps' ? 'Current Value' : 'Est. Balance'}
+                                                    </div>
+                                                    <div className="text-sm font-medium text-emerald-400">
+                                                        {npsValue ? formatCurrency(npsValue.currentValue) :
+                                                            ppfBalance ? formatCurrency(ppfBalance.currentBalance) :
+                                                                formatCurrency(s.current_valuation)}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] text-slate-500 uppercase">
+                                                        {s.investment.investment_type === 'nps' ? 'Returns' : 'Interest Earned'}
+                                                    </div>
+                                                    <div className={`text-sm font-medium ${(npsValue?.absoluteReturn || ppfBalance?.interestEarned || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                                        }`}>
+                                                        {npsValue ? `${formatCurrency(npsValue.absoluteReturn)} (${npsValue.percentageReturn.toFixed(1)}%)` :
+                                                            ppfBalance ? formatCurrency(ppfBalance.interestEarned) :
+                                                                '---'}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Contributions</div>
-                                                <div className="text-sm font-medium text-slate-300">{s.lots.length} deposits</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Type</div>
-                                                <div className="text-sm font-medium text-emerald-400">{s.investment.investment_type.toUpperCase()}</div>
-                                            </div>
-                                        </div>
 
-                                        {s.investment.monthly_deposit && (
-                                            <div className="mt-2 text-[10px] text-blue-400 text-right">
-                                                Monthly SIP: {formatCurrency(s.investment.monthly_deposit)}
-                                            </div>
-                                        )}
+                                            {s.investment.investment_type === 'nps' && s.investment.current_price && (
+                                                <div className="mt-2 flex justify-between items-center text-xs">
+                                                    <span className="text-slate-500">
+                                                        NAV: {formatCurrency(s.investment.current_price)} • Units: {formatUnits(s.total_units)}
+                                                    </span>
+                                                    {s.investment.last_updated_at && (
+                                                        <span className="text-slate-600">as of {s.investment.last_updated_at}</span>
+                                                    )}
+                                                </div>
+                                            )}
 
-                                        <div className="mt-3 p-2 bg-emerald-900/20 rounded text-xs text-emerald-400 border border-emerald-800/30">
-                                            💡 Manage interest rates in Budget → NPS/PPF Rates tab
+                                            {s.investment.investment_type === 'ppf' && daysToMaturity !== null && (
+                                                <div className="mt-2 text-xs text-blue-400">
+                                                    {daysToMaturity > 0
+                                                        ? `📅 ${Math.ceil(daysToMaturity / 365)} years remaining (${daysToMaturity} days)`
+                                                        : '✅ Matured'}
+                                                </div>
+                                            )}
+
+                                            {s.investment.monthly_deposit && (
+                                                <div className="mt-2 text-[10px] text-blue-400 text-right">
+                                                    Monthly SIP: {formatCurrency(s.investment.monthly_deposit)}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             {filteredSummaries.filter(s => ['nps', 'ppf'].includes(s.investment.investment_type)).length === 0 && (
                                 <div className="text-slate-500 text-sm italic col-span-2">
                                     No NPS/PPF investments. Add one using the "Add Investment" button.
@@ -835,7 +923,7 @@ export default function Investments() {
                                             <div>
                                                 <label className={darkTheme.label}>Monthly Deposit</label>
                                                 <input
-                                                    type="number" step="0.000001"
+                                                    type="number" step="0.01"
                                                     value={formData.monthly_deposit || ''}
                                                     onChange={(e) => setFormData({ ...formData, monthly_deposit: parseFloat(e.target.value) })}
                                                     className={darkTheme.input}
@@ -847,6 +935,98 @@ export default function Investments() {
                                         {formData.id && (
                                             <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
                                                 💡 Principal investments are managed via <b>Lots</b>.
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {(formData.investment_type === 'nps' || formData.investment_type === 'ppf') && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>
+                                                    {formData.investment_type === 'nps' ? 'Fund Manager' : 'Bank Name'}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.bank_name || ''}
+                                                    onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
+                                                    className={darkTheme.input}
+                                                    placeholder={formData.investment_type === 'nps' ? 'e.g., SBI, HDFC' : 'e.g., SBI, Post Office'}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>Interest Rate (%)</label>
+                                                <input
+                                                    type="number" step="0.01"
+                                                    value={formData.interest_rate || (formData.investment_type === 'ppf' ? 7.1 : '')}
+                                                    onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
+                                                    className={darkTheme.input}
+                                                    placeholder={formData.investment_type === 'ppf' ? '7.1' : '---'}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={darkTheme.label}>Opening Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.opening_date || ''}
+                                                    onChange={(e) => setFormData({ ...formData, opening_date: e.target.value })}
+                                                    className={darkTheme.input}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={darkTheme.label}>Maturity Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.maturity_date || ''}
+                                                    onChange={(e) => setFormData({ ...formData, maturity_date: e.target.value })}
+                                                    className={darkTheme.input}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {formData.investment_type === 'nps' && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className={darkTheme.label}>Scheme ID (for NAV)</label>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={formData.provider_symbol || ''}
+                                                            onChange={(e) => setFormData({ ...formData, provider_symbol: e.target.value })}
+                                                            className={darkTheme.input + " flex-1"}
+                                                            placeholder="e.g., SM001001"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleFetchNPSNAV}
+                                                            className="px-3 bg-emerald-800 rounded text-emerald-300 hover:bg-emerald-700 text-sm"
+                                                            disabled={fetchingPrice || !formData.provider_symbol}
+                                                            title="Fetch NPS NAV"
+                                                        >
+                                                            {fetchingPrice ? '...' : '📡 NAV'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className={darkTheme.label}>Current NAV</label>
+                                                    <input
+                                                        type="number" step="0.0001"
+                                                        value={formData.current_price || ''}
+                                                        onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
+                                                        className={darkTheme.input}
+                                                        placeholder="₹xx.xxxx"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {formData.id && (
+                                            <div className="mt-4 p-3 bg-emerald-900/20 border border-emerald-800/50 rounded-lg text-xs text-emerald-300">
+                                                💡 Contributions are managed via <b>Lots</b>. Use "+ Add" button on the card to record deposits.
                                             </div>
                                         )}
                                     </>

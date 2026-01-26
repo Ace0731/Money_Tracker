@@ -18,7 +18,7 @@ pub struct InvestmentLot {
 pub struct Investment {
     pub id: Option<i64>,
     pub name: String,
-    pub investment_type: String, // 'stock', 'mf', 'fd', 'rd'
+    pub investment_type: String, // 'stock', 'mf', 'fd', 'rd', 'nps', 'ppf'
     pub account_id: i64,
     
     // Stocks/MF specific
@@ -26,12 +26,19 @@ pub struct Investment {
     pub avg_buy_price: Option<f64>,
     pub current_price: Option<f64>,
     
-    // FD/RD specific
+    // FD/RD/PPF specific
     pub principal_amount: Option<f64>,
     pub interest_rate: Option<f64>,
     pub maturity_date: Option<String>,
     pub maturity_amount: Option<f64>,
     pub monthly_deposit: Option<f64>,
+    pub tenure_months: Option<i32>,
+    pub opening_date: Option<String>,
+    pub compounding: Option<String>, // "monthly", "quarterly", "yearly"
+    pub bank_name: Option<String>,
+    
+    // Category link for auto-tracking deposits
+    pub category_id: Option<i64>,
     
     pub notes: Option<String>,
     pub provider_symbol: Option<String>,
@@ -59,7 +66,7 @@ pub fn get_investments(db: State<DbConnection>) -> Result<Vec<Investment>, Strin
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, last_updated_at, principal_charges, created_at FROM investments")
+        .prepare("SELECT id, name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, last_updated_at, principal_charges, created_at, tenure_months, opening_date, compounding, bank_name, category_id FROM investments")
         .map_err(|e| e.to_string())?;
     
     let investments = stmt
@@ -82,6 +89,11 @@ pub fn get_investments(db: State<DbConnection>) -> Result<Vec<Investment>, Strin
                 last_updated_at: row.get(14)?,
                 principal_charges: row.get(15)?,
                 created_at: row.get(16)?,
+                tenure_months: row.get(17)?,
+                opening_date: row.get(18)?,
+                compounding: row.get(19)?,
+                bank_name: row.get(20)?,
+                category_id: row.get(21)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -131,6 +143,11 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 last_updated_at: row.get(14)?,
                 principal_charges: row.get(15)?,
                 created_at: row.get(16)?,
+                tenure_months: None,
+                opening_date: None,
+                compounding: None,
+                bank_name: None,
+                category_id: None,
             };
 
             let account_name: String = row.get(17)?;
@@ -234,8 +251,8 @@ pub fn create_investment(db: State<DbConnection>, investment: Investment) -> Res
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO investments (name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, principal_charges)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO investments (name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, principal_charges, tenure_months, opening_date, compounding, bank_name, category_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
         params![
             investment.name,
             investment.investment_type,
@@ -251,6 +268,11 @@ pub fn create_investment(db: State<DbConnection>, investment: Investment) -> Res
             investment.notes,
             investment.provider_symbol,
             investment.principal_charges,
+            investment.tenure_months,
+            investment.opening_date,
+            investment.compounding,
+            investment.bank_name,
+            investment.category_id,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -266,7 +288,8 @@ pub fn update_investment(db: State<DbConnection>, investment: Investment) -> Res
     conn.execute(
         "UPDATE investments SET name = ?1, type = ?2, account_id = ?3, units = ?4, avg_buy_price = ?5, 
          current_price = ?6, principal_amount = ?7, interest_rate = ?8, maturity_date = ?9, 
-         maturity_amount = ?10, monthly_deposit = ?11, notes = ?12, provider_symbol = ?13, principal_charges = ?14 WHERE id = ?15",
+         maturity_amount = ?10, monthly_deposit = ?11, notes = ?12, provider_symbol = ?13, principal_charges = ?14,
+         tenure_months = ?15, opening_date = ?16, compounding = ?17, bank_name = ?18, category_id = ?19 WHERE id = ?20",
         params![
             investment.name,
             investment.investment_type,
@@ -282,6 +305,11 @@ pub fn update_investment(db: State<DbConnection>, investment: Investment) -> Res
             investment.notes,
             investment.provider_symbol,
             investment.principal_charges,
+            investment.tenure_months,
+            investment.opening_date,
+            investment.compounding,
+            investment.bank_name,
+            investment.category_id,
             id,
         ],
     )
