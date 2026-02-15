@@ -1,70 +1,37 @@
-# Release Notes - v1.4.0
+# Release Notes - v1.5.0
 
-**Release Date:** January 26, 2026
+**Release Date:** February 12, 2026
 
 ---
 
 ## 🆕 New Features
 
-### Project & Client Status Tracking
+### Corporate Invoice Maker (Major Upgrade)
+- **Itemized Billing**: Add multiple rows with Description, Quantity, Rate, and auto-calculated totals.
+- **Tax & Discount Support**: Native support for flat discounts and GST percentages.
+- **Dynamic UPI QR Code**: Real-time QR code generation that updates with the invoice amount for instant payments.
+- **Project Linking**: Link invoices back to specific projects or quotations via project references.
 
-**Projects** now have a status field:
-- 🟢 Active - Work in progress
-- ⏸️ On Hold - Temporarily paused
-- 🎯 Prospect - Not yet confirmed
-- ✅ Completed - Successfully finished
-- ❌ Cancelled - Project cancelled
+### Professional PDF Generation
+- **Corporate Layout**: Premium, minimal design for both Quotations and Invoices.
+- **Smart Client Blocks**: Automatically pulls Business Name, Address, Contact, and GST details from the client profile.
+- **Payment Sections**: Dedicated blocks for Bank Transfer details and scannable UPI QR codes.
+- **Customization**: Respects theme colors and branding settings defined in the app.
 
-**Clients** now have a status field:
-- 🟢 Active - Currently working with
-- 🎯 Prospect - Potential client
-- 💤 Inactive - Past client
-
-Status badges are displayed on cards with grouped views.
-
----
-
-### Enhanced Investment Portfolio
-
-**New Investment Fields:**
-- Tenure (months)
-- Opening Date
-- Compounding frequency (monthly/quarterly/yearly)
-- Bank/Fund Manager name
-- Category linking for deposit auto-tracking
-
-**Investment Calculations:**
-| Type | Feature |
-|------|---------|
-| **FD** | Compound interest calculation |
-| **RD** | Monthly deposits with interest |
-| **PPF** | 7.1% annual, maturity countdown |
-| **NPS** | Live NAV fetch from npsnav.in |
-
-**NPS NAV Fetch:**
-- 📡 NAV button in NPS form
-- Fetches current NAV from npsnav.in API
-- Auto-populates NAV field
-
-**Enhanced Display:**
-- NPS/PPF cards show Current Value, Returns %, Days to Maturity
-- Bank/Fund Manager displayed on cards
+### Rich Client Profiles
+- Expanded client profiles to include:
+  - Legal/Business Name
+  - Primary Address
+  - GST Number
+  - Professional Contact Details (Email/Phone)
 
 ---
 
-## 📦 Database Changes
-- Added `status` column to projects table
-- Added `status` column to clients table
-- Added new investment fields: `tenure_months`, `opening_date`, `compounding`, `bank_name`, `category_id`
-- Added `nps_units` table for unit tracking
+## 🔧 Improvements & Fixes
+- **PDF Reliability**: Fixed issues with missing logos and garbled currency symbols.
+- **UI Refinements**: Redesigned Invoices and Clients screens for better data management.
+- **Data Integrity**: Backend migrations to support new itemized billing fields.
 
 ---
 
-## 🔧 Technical
-- New utility: `investmentCalculations.ts` with FD/RD/PPF/NPS calculation functions
-- Updated Investment TypeScript interface
-- Enhanced Investments.tsx with NPS/PPF form section
-
----
-
-**Full Changelog:** v1.3.1 → v1.4.0
+**Full Changelog:** v1.4.0 → v1.5.0

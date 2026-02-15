@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
+import type { Project } from '../types';
 
 interface AccountBalance {
     id: number;
@@ -20,6 +21,11 @@ interface DashboardData {
     current_month_income: number;
     current_month_expense: number;
     current_month_net: number;
+    project_stats?: {
+        total_expected: number;
+        total_received: number;
+        total_pending: number;
+    };
 }
 
 export default function Dashboard() {
@@ -33,8 +39,21 @@ export default function Dashboard() {
 
     const loadDashboard = async () => {
         try {
-            const dashboardData = await execute<DashboardData>('get_dashboard_data');
-            setData(dashboardData);
+            const [dashboardData, projects] = await Promise.all([
+                execute<DashboardData>('get_dashboard_data'),
+                execute<Project[]>('get_projects')
+            ]);
+
+            const stats = projects.reduce((acc, p) => {
+                const pending = (p.expected_amount || 0) - (p.received_amount || 0);
+                return {
+                    total_expected: acc.total_expected + (p.expected_amount || 0),
+                    total_received: acc.total_received + (p.received_amount || 0),
+                    total_pending: acc.total_pending + (pending > 0 ? pending : 0)
+                };
+            }, { total_expected: 0, total_received: 0, total_pending: 0 });
+
+            setData({ ...dashboardData, project_stats: stats });
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         }
@@ -128,6 +147,31 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
+
+            {/* Project Finance Summary */}
+            <div className="mb-6">
+                <h2 className="text-xl font-bold mb-4 text-slate-100">Project Tracker Summary</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
+                        <div className="text-sm text-slate-400">Total Project Value</div>
+                        <div className="text-2xl font-bold text-blue-400 mt-2">
+                            {formatCurrency(data.project_stats?.total_expected || 0)}
+                        </div>
+                    </div>
+                    <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700">
+                        <div className="text-sm text-slate-400">Total Received</div>
+                        <div className="text-2xl font-bold text-green-400 mt-2">
+                            {formatCurrency(data.project_stats?.total_received || 0)}
+                        </div>
+                    </div>
+                    <div className="card p-6 border-2 border-red-500/20 bg-slate-800 rounded-xl shadow-lg">
+                        <div className="text-sm text-slate-400">Total Pending</div>
+                        <div className="text-2xl font-bold text-red-500 mt-2">
+                            {formatCurrency(data.project_stats?.total_pending || 0)}
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* Current Month Summary */}
             <div className="mb-6">

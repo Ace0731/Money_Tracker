@@ -8,6 +8,9 @@ pub mod reports;
 pub mod dashboard;
 pub mod investments;
 pub mod budgets;
+pub mod quotations;
+pub mod invoices;
+pub mod company_settings;
 
 pub use accounts::*;
 pub use categories::*;
@@ -19,3 +22,6 @@ pub use reports::*;
 pub use dashboard::*;
 pub use investments::*;
 pub use budgets::*;
+pub use quotations::*;
+pub use invoices::*;
+pub use company_settings::*;

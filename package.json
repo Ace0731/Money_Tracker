@@ -1,7 +1,7 @@
 {
     "name": "money-tracker",
     "private": true,
-    "version": "1.4.0",
+    "version": "1.5.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
@@ -11,6 +11,10 @@
     },
     "dependencies": {
         "@tauri-apps/api": "^2.2.0",
+        "jspdf": "^2.5.1",
+        "jspdf-autotable": "^5.0.7",
+        "pdfmake": "^0.3.3",
+        "qrcode.react": "^4.2.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-router-dom": "^6.28.0",
@@ -20,6 +24,7 @@
     },
     "devDependencies": {
         "@tauri-apps/cli": "^2.2.0",
+        "@types/pdfmake": "^0.3.1",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
         "@vitejs/plugin-react": "^4.3.4",

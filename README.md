@@ -2,7 +2,7 @@
 
 A powerful, **100% local** personal finance tracker for freelancers and individuals. Built with React, Tauri, and SQLite.
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-Private-red)
 
@@ -154,7 +154,13 @@ money-tracker/
 
 ## 🔄 Version History
 
-### v1.4.0 (Current)
+### v1.5.0 (Current)
+- **Corporate Invoice System**: Itemized billing with Qty/Rate, tax & discounts.
+- **UPI QR Codes**: Real-time amount-cured QR codes for instant payments.
+- **Rich Client Profiles**: Store business details like GST, Address, and Contacts.
+- **Corporate Quotation Redesign**: Professional multi-section proposals.
+
+### v1.4.0
 - Project & Client status tracking
 - Investment portfolio with FD/RD/PPF/NPS calculations
 - Live NPS NAV fetch from npsnav.in

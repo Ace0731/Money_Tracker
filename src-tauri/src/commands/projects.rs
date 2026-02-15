@@ -14,7 +14,12 @@ pub struct Project {
     pub end_date: Option<String>,
     pub notes: Option<String>,
     pub completed: Option<bool>,
-    pub status: Option<String>,  // "active", "completed", "cancelled", "on_hold", "prospect"
+    pub status: Option<String>,  // "active", "completed", "cancelled", "on_hold", "prospect", "archived"
+    // SRS Fields
+    pub srs_internal_link: Option<String>,
+    pub srs_client_approved_link: Option<String>,
+    pub srs_status: Option<String>,
+    pub srs_approved_date: Option<String>,
     // Computed fields
     pub received_amount: Option<f64>,
     pub spent_amount: Option<f64>,
@@ -50,11 +55,12 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
         .prepare("
             SELECT 
                 p.id, p.name, p.client_id, p.expected_amount, p.daily_rate, p.start_date, p.end_date, p.notes, p.completed, p.status,
+                p.srs_internal_link, p.srs_client_approved_link, p.srs_status, p.srs_approved_date,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'income') as received,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'expense') as spent,
                 (SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = p.id) as hours
             FROM projects p 
-            ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'prospect' THEN 2 WHEN 'completed' THEN 3 ELSE 4 END, p.name
+            ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'on_hold' THEN 1 WHEN 'prospect' THEN 2 WHEN 'completed' THEN 3 WHEN 'archived' THEN 4 ELSE 5 END, p.name
         ")
         .map_err(|e| e.to_string())?;
     
@@ -71,9 +77,13 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
                 notes: row.get(7)?,
                 completed: row.get(8)?,
                 status: row.get(9)?,
-                received_amount: Some(row.get(10)?),
-                spent_amount: Some(row.get(11)?),
-                logged_hours: Some(row.get(12)?),
+                srs_internal_link: row.get(10)?,
+                srs_client_approved_link: row.get(11)?,
+                srs_status: row.get(12)?,
+                srs_approved_date: row.get(13)?,
+                received_amount: Some(row.get(14)?),
+                spent_amount: Some(row.get(15)?),
+                logged_hours: Some(row.get(16)?),
             })
         })
         .map_err(|e| e.to_string())?
@@ -91,7 +101,9 @@ pub fn create_project(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO projects (name, client_id, expected_amount, daily_rate, start_date, end_date, notes, completed, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO projects (name, client_id, expected_amount, daily_rate, start_date, end_date, notes, completed, status, 
+         srs_internal_link, srs_client_approved_link, srs_status, srs_approved_date) 
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             project.name,
             project.client_id,
@@ -101,7 +113,11 @@ pub fn create_project(
             project.end_date,
             project.notes,
             project.completed.unwrap_or(false),
-            project.status.unwrap_or("active".to_string())
+            project.status.unwrap_or("active".to_string()),
+            project.srs_internal_link,
+            project.srs_client_approved_link,
+            project.srs_status.unwrap_or("Draft".to_string()),
+            project.srs_approved_date
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -119,7 +135,9 @@ pub fn update_project(
     let id = project.id.ok_or("Project ID is required")?;
     
     conn.execute(
-        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, daily_rate = ?4, start_date = ?5, end_date = ?6, notes = ?7, completed = ?8, status = ?9 WHERE id = ?10",
+        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, daily_rate = ?4, start_date = ?5, 
+         end_date = ?6, notes = ?7, completed = ?8, status = ?9, srs_internal_link = ?10, 
+         srs_client_approved_link = ?11, srs_status = ?12, srs_approved_date = ?13 WHERE id = ?14",
         params![
             project.name,
             project.client_id,
@@ -130,6 +148,10 @@ pub fn update_project(
             project.notes,
             project.completed.unwrap_or(false),
             project.status.unwrap_or("active".to_string()),
+            project.srs_internal_link,
+            project.srs_client_approved_link,
+            project.srs_status,
+            project.srs_approved_date,
             id
         ],
     )

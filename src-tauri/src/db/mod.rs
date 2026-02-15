@@ -192,23 +192,132 @@ pub fn initialize_database() -> Result<DbConnection> {
     let _ = conn.execute("ALTER TABLE investments ADD COLUMN compounding TEXT DEFAULT 'quarterly'", []);
     let _ = conn.execute("ALTER TABLE investments ADD COLUMN bank_name TEXT", []);
     
-    // 18. Create nps_units table for unit-wise NPS tracking
-    let _ = conn.execute(
-        "CREATE TABLE IF NOT EXISTS nps_units (
+    // 19. Add SRS fields to projects
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN srs_internal_link TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN srs_client_approved_link TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN srs_status TEXT DEFAULT 'Draft'", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN srs_approved_date DATETIME", []);
+
+    // 20. Create quotations and quotation_items
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS quotations (
             id INTEGER PRIMARY KEY,
-            investment_id INTEGER NOT NULL,
-            transaction_id INTEGER,
-            date DATE NOT NULL,
-            amount REAL NOT NULL,
-            nav REAL NOT NULL,
-            units REAL NOT NULL,
+            client_id INTEGER NOT NULL,
+            project_id INTEGER,
+            quotation_number TEXT NOT NULL UNIQUE,
+            issue_date DATE NOT NULL,
+            valid_till DATE NOT NULL,
+            total_amount REAL NOT NULL,
+            status TEXT DEFAULT 'Draft',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (investment_id) REFERENCES investments(id),
+            FOREIGN KEY (client_id) REFERENCES clients(id),
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS quotation_items (
+            id INTEGER PRIMARY KEY,
+            quotation_id INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            rate REAL NOT NULL,
+            amount REAL NOT NULL,
+            FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 21. Create invoices, invoice_items, and invoice_payments
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS invoices (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            invoice_number TEXT NOT NULL UNIQUE,
+            stage TEXT NOT NULL,
+            issue_date DATE NOT NULL,
+            due_date DATE NOT NULL,
+            total_amount REAL NOT NULL,
+            status TEXT DEFAULT 'Unpaid',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS invoice_items (
+            id INTEGER PRIMARY KEY,
+            invoice_id INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            amount REAL NOT NULL,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS invoice_payments (
+            id INTEGER PRIMARY KEY,
+            invoice_id INTEGER NOT NULL,
+            amount_paid REAL NOT NULL,
+            payment_date DATE NOT NULL,
+            payment_mode TEXT NOT NULL,
+            transaction_reference TEXT,
+            transaction_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
             FOREIGN KEY (transaction_id) REFERENCES transactions(id)
         )",
         [],
-    );
-    
+    )?;
+
+    // 22. Create company_settings table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS company_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )",
+        [],
+    )?;
+
+    // Seed default company settings if empty
+    let settings_count: i64 = conn.query_row("SELECT COUNT(*) FROM company_settings", [], |r| r.get(0)).unwrap_or(0);
+    if settings_count == 0 {
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('company_name', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('company_address', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('bank_name', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('account_number', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('ifsc_code', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('upi_id', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('pdf_theme_color', '#3b82f6')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('pdf_footer_text', '')", []);
+        let _ = conn.execute("INSERT INTO company_settings (key, value) VALUES ('show_qr_code', 'true')", []);
+    }
+
+    // 23. Quotation Redesign Migrations
+    let _ = conn.execute("ALTER TABLE quotations ADD COLUMN project_title TEXT", []);
+    let _ = conn.execute("ALTER TABLE quotations ADD COLUMN payment_terms TEXT", []);
+    let _ = conn.execute("ALTER TABLE quotations ADD COLUMN terms_conditions TEXT", []);
+    let _ = conn.execute("ALTER TABLE quotation_items ADD COLUMN timeline TEXT", []);
+    let _ = conn.execute("ALTER TABLE quotation_items ADD COLUMN features TEXT", []);
+
+    // 24. Client Details Migrations
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN business_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN address TEXT", []);
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN contact_number TEXT", []);
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN email TEXT", []);
+    let _ = conn.execute("ALTER TABLE clients ADD COLUMN gst TEXT", []);
+
+    // 25. Invoice Redesign Migrations
+    let _ = conn.execute("ALTER TABLE invoices ADD COLUMN discount REAL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE invoices ADD COLUMN tax_percentage REAL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE invoices ADD COLUMN project_reference TEXT", []);
+    let _ = conn.execute("ALTER TABLE invoices ADD COLUMN notes TEXT", []);
+    let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN quantity REAL DEFAULT 1", []);
+    let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN rate REAL", []);
+
     Ok(DbConnection(Mutex::new(conn)))
 }
 

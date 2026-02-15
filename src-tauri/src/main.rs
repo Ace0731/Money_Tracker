@@ -54,6 +54,20 @@ fn main() {
             delete_investment_lot,
             get_live_market_price,
             get_project_payments,
+            // Quotation commands
+            get_quotations,
+            get_quotation_details,
+            create_quotation,
+            update_quotation,
+            delete_quotation,
+            // Invoice commands
+            get_invoices,
+            get_invoice_details,
+            create_invoice,
+            add_invoice_payment,
+            // Company Settings commands
+            get_company_settings,
+            update_company_settings,
             // Budget commands
             get_investment_rates,
             add_investment_rate,

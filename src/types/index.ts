@@ -83,7 +83,12 @@ export interface Client {
     id?: number;
     name: string;
     notes?: string;
-    status?: 'active' | 'inactive' | 'prospect';
+    status?: 'active' | 'inactive' | 'prospect' | 'archived';
+    business_name?: string;
+    address?: string;
+    contact_number?: string;
+    email?: string;
+    gst?: string;
     created_at?: string;
 }
 
@@ -97,11 +102,118 @@ export interface Project {
     end_date?: string;
     notes?: string;
     completed?: boolean;
-    status?: 'active' | 'completed' | 'cancelled' | 'on_hold' | 'prospect';
+    status?: 'active' | 'completed' | 'cancelled' | 'on_hold' | 'prospect' | 'archived';
+
+    // SRS Fields
+    srs_internal_link?: string;
+    srs_client_approved_link?: string;
+    srs_status?: 'Draft' | 'Sent' | 'Approved';
+    srs_approved_date?: string;
+
     // Computed fields
     received_amount?: number;
     spent_amount?: number;
     logged_hours?: number;
+}
+
+// Quotation Types
+export interface QuotationItem {
+    id?: number;
+    quotation_id?: number;
+    description: string;
+    timeline?: string;
+    features?: string; // Newline separated
+    quantity: number;
+    rate: number;
+    amount: number;
+}
+
+export interface Quotation {
+    id?: number;
+    client_id: number;
+    project_id?: number;
+    project_title?: string;
+    quotation_number: string;
+    issue_date: string;
+    valid_till: string;
+    total_amount: number;
+    status: 'Draft' | 'Sent' | 'Approved' | 'Rejected';
+    payment_terms?: string;
+    terms_conditions?: string;
+    created_at?: string;
+    items?: QuotationItem[];
+    client_name?: string;
+    project_name?: string;
+    client_business_name?: string;
+    client_address?: string;
+    client_phone?: string;
+    client_email?: string;
+    client_gst?: string;
+}
+
+// Invoice Types
+export interface InvoiceItem {
+    id?: number;
+    invoice_id?: number;
+    description: string;
+    quantity: number;
+    rate: number;
+    amount: number;
+}
+
+export interface InvoicePayment {
+    id?: number;
+    invoice_id: number;
+    amount_paid: number;
+    payment_date: string;
+    payment_mode: 'UPI' | 'Bank' | 'Cash' | 'Other';
+    transaction_reference?: string;
+    transaction_id?: number;
+    created_at?: string;
+}
+
+export interface Invoice {
+    id?: number;
+    project_id: number;
+    invoice_number: string;
+    stage: 'Advance' | 'Milestone' | 'Final';
+    issue_date: string;
+    due_date: string;
+    total_amount: number;
+    status: 'Unpaid' | 'Partially Paid' | 'Paid';
+    discount?: number;
+    tax_percentage?: number;
+    project_reference?: string;
+    notes?: string;
+    created_at?: string;
+    items?: InvoiceItem[];
+    payments?: InvoicePayment[];
+    project_name?: string;
+    client_name?: string;
+    client_business_name?: string;
+    client_address?: string;
+    client_phone?: string;
+    client_email?: string;
+    client_gst?: string;
+}
+
+export interface CompanySettings {
+    company_name: string;
+    company_subtitle?: string;
+    company_address: string;
+    owner_name?: string;
+    company_phone?: string;
+    company_email?: string;
+    company_logo?: string; // Base64 or URL
+    bank_name: string;
+    account_number: string;
+    ifsc_code: string;
+    upi_id: string;
+    pdf_theme_color: string;
+    pdf_footer_text: string;
+    show_qr_code: boolean;
+    pdf_header_style?: 'Logo-Left' | 'Logo-Center' | 'No-Logo';
+    pdf_font_size?: number;
 }
 
 export interface TimeLog {

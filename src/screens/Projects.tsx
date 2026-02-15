@@ -3,6 +3,7 @@ import { useDatabase } from '../hooks/useDatabase';
 import type { Project, Client, TimeLog, ProjectPayment } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
+import Swal from 'sweetalert2';
 
 export default function Projects() {
     const { execute, loading } = useDatabase();
@@ -22,6 +23,8 @@ export default function Projects() {
         completed: false,
         status: 'active',
     });
+    const [showArchived, setShowArchived] = useState(false);
+    const [showOnHold, setShowOnHold] = useState(false);
 
     // Time Log State
     const [showTimeLog, setShowTimeLog] = useState(false);
@@ -98,6 +101,17 @@ export default function Projects() {
     };
 
     const handleLogTime = (projectId: number) => {
+        const project = projects.find(p => p.id === projectId);
+        if (project && project.srs_status !== 'Approved') {
+            Swal.fire({
+                title: 'SRS Not Approved',
+                text: 'Development cannot start until the SRS is approved by the client.',
+                icon: 'warning',
+                background: '#1e293b',
+                color: '#f1f5f9'
+            });
+            return;
+        }
         setSelectedProjectId(projectId);
         setShowTimeLog(true);
     };
@@ -232,7 +246,7 @@ export default function Projects() {
                 <div>
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {projects.filter(p => p.status === 'active' || p.status === 'on_hold' || p.status === 'prospect').map((project) => (
+                        {projects.filter(p => p.status === 'active' || p.status === 'prospect').map((project) => (
                             <div
                                 key={project.id}
                                 className={`${darkTheme.card} p-6 cursor-pointer relative group`}
@@ -245,16 +259,9 @@ export default function Projects() {
                                             {formatCurrency(project.expected_amount)}
                                         </span>
                                     )}
-                                    {project.status && project.status !== 'active' && (
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${project.status === 'on_hold' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                project.status === 'prospect' ? 'bg-purple-500/20 text-purple-400' :
-                                                    project.status === 'cancelled' ? 'bg-red-500/20 text-red-400' :
-                                                        'bg-slate-500/20 text-slate-400'
-                                            }`}>
-                                            {project.status === 'on_hold' ? '⏸️ On Hold' :
-                                                project.status === 'prospect' ? '🎯 Prospect' :
-                                                    project.status === 'cancelled' ? '❌ Cancelled' :
-                                                        project.status}
+                                    {project.status === 'prospect' && (
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-500/20 text-purple-400">
+                                            🎯 Prospect
                                         </span>
                                     )}
                                 </div>
@@ -278,18 +285,11 @@ export default function Projects() {
                                         </div>
                                     </div>
                                     <div>
-                                        <div className="text-[10px] text-slate-400 uppercase">Spent</div>
-                                        <div className="text-sm font-bold text-orange-400">
-                                            {formatCurrency(project.spent_amount || 0)}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-slate-400 uppercase">Actual Rate</div>
-                                        <div className="text-sm font-bold text-green-400">
-                                            {project.logged_hours && project.logged_hours > 0
-                                                ? formatCurrency((project.received_amount || 0) / (project.logged_hours / 8))
-                                                : '---'}
-                                            <span className="text-[10px] text-slate-500 font-normal ml-1">/day</span>
+                                        <div className="text-[10px] text-slate-400 uppercase">SRS Status</div>
+                                        <div className={`text-sm font-bold ${project.srs_status === 'Approved' ? 'text-green-400' :
+                                            project.srs_status === 'Sent' ? 'text-blue-400' : 'text-slate-400'
+                                            }`}>
+                                            {project.srs_status || 'Draft'}
                                         </div>
                                     </div>
                                     <div>
@@ -337,6 +337,39 @@ export default function Projects() {
                             </div>
                         ))}
                     </div>
+                </div>
+
+                {/* On-Hold Projects */}
+                <div>
+                    <button
+                        onClick={() => setShowOnHold(!showOnHold)}
+                        className="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 hover:text-slate-400 transition-colors"
+                    >
+                        <span>{showOnHold ? '▼' : '▶'} On-Hold Projects ({projects.filter(p => p.status === 'on_hold').length})</span>
+                    </button>
+
+                    {showOnHold && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-80">
+                            {projects.filter(p => p.status === 'on_hold').map((project) => (
+                                <div
+                                    key={project.id}
+                                    className={`${darkTheme.card} p-6 cursor-pointer relative group border-yellow-500/20`}
+                                    onClick={() => handleEdit(project)}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h3 className="text-xl font-bold text-slate-300">{project.name}</h3>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-center">
+                                            ⏸️ On Hold
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-slate-500 mb-4">{getClientName(project.client_id)}</p>
+                                    <div className="text-xs text-slate-500 italic">
+                                        Received: {formatCurrency(project.received_amount || 0)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Completed Projects */}
@@ -402,6 +435,43 @@ export default function Projects() {
                                         ))}
                                     </tbody>
                                 </table>
+                                {/* Archived Projects */}
+                                <div>
+                                    <button
+                                        onClick={() => setShowArchived(!showArchived)}
+                                        className="flex items-center gap-2 text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 hover:text-slate-400 transition-colors"
+                                    >
+                                        <span>{showArchived ? '▼' : '▶'} Archived Projects ({projects.filter(p => p.status === 'archived').length})</span>
+                                    </button>
+
+                                    {showArchived && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-70">
+                                            {projects.filter(p => p.status === 'archived').map((project) => (
+                                                <div
+                                                    key={project.id}
+                                                    className={`${darkTheme.card} p-6 cursor-pointer relative group border-slate-800`}
+                                                    onClick={() => handleEdit(project)}
+                                                >
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="text-xl font-bold text-slate-400">{project.name}</h3>
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-800 text-slate-500 border border-slate-700">
+                                                            📁 Archived
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-slate-500 mb-4">{getClientName(project.client_id)}</p>
+                                                    <div className="text-xs text-slate-500 italic">
+                                                        Value: {formatCurrency(project.expected_amount || 0)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {projects.filter(p => p.status === 'archived').length === 0 && (
+                                                <div className="col-span-full py-8 text-center text-slate-600 italic border-2 border-dashed border-slate-800 rounded-xl">
+                                                    No archived projects. Archive old projects to declutter your view.
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -505,11 +575,78 @@ export default function Projects() {
                                 />
                             </div>
 
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-700 pt-4">
+                                <div>
+                                    <label className={darkTheme.label}>SRS Status</label>
+                                    <select
+                                        value={formData.srs_status || 'Draft'}
+                                        onChange={(e) => setFormData({ ...formData, srs_status: e.target.value as any })}
+                                        className={darkTheme.select}
+                                    >
+                                        <option value="Draft">Draft</option>
+                                        <option value="Sent">Sent</option>
+                                        <option value="Approved">Approved</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={darkTheme.label}>SRS Approved Date</label>
+                                    <input
+                                        type="date"
+                                        value={formData.srs_approved_date || ''}
+                                        onChange={(e) => setFormData({ ...formData, srs_approved_date: e.target.value })}
+                                        className={darkTheme.input}
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className={darkTheme.label}>SRS Internal Link</label>
+                                    <input
+                                        type="url"
+                                        value={formData.srs_internal_link || ''}
+                                        onChange={(e) => setFormData({ ...formData, srs_internal_link: e.target.value })}
+                                        className={darkTheme.input}
+                                        placeholder="Internal doc link"
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className={darkTheme.label}>Client Approved SRS Link</label>
+                                    <input
+                                        type="url"
+                                        value={formData.srs_client_approved_link || ''}
+                                        onChange={(e) => setFormData({ ...formData, srs_client_approved_link: e.target.value })}
+                                        className={darkTheme.input}
+                                        placeholder="Signed/Approved doc link"
+                                    />
+                                </div>
+                            </div>
+
                             <div>
                                 <label className={darkTheme.label}>Status</label>
                                 <select
                                     value={formData.status || 'active'}
-                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any, completed: e.target.value === 'completed' })}
+                                    onChange={async (e) => {
+                                        const newStatus = e.target.value;
+                                        if (newStatus === 'completed') {
+                                            // Check invoices
+                                            try {
+                                                const invoices = await execute<any[]>('get_invoices');
+                                                const projectInvoices = invoices.filter(i => i.project_id === formData.id);
+                                                const hasPending = projectInvoices.some(i => i.status !== 'Paid');
+                                                if (hasPending) {
+                                                    Swal.fire({
+                                                        title: 'Payment Pending',
+                                                        text: 'Project cannot be completed until all invoices are fully paid.',
+                                                        icon: 'error',
+                                                        background: '#1e293b',
+                                                        color: '#f1f5f9'
+                                                    });
+                                                    return;
+                                                }
+                                            } catch (err) {
+                                                console.error(err);
+                                            }
+                                        }
+                                        setFormData({ ...formData, status: newStatus as any, completed: newStatus === 'completed' });
+                                    }}
                                     className={darkTheme.select}
                                 >
                                     <option value="active">🟢 Active</option>
@@ -517,6 +654,7 @@ export default function Projects() {
                                     <option value="prospect">🎯 Prospect</option>
                                     <option value="completed">✅ Completed</option>
                                     <option value="cancelled">❌ Cancelled</option>
+                                    <option value="archived">📁 Archived</option>
                                 </select>
                             </div>
 
