@@ -33,7 +33,7 @@ export default function Transactions() {
 
     // Form state
     const [formData, setFormData] = useState<Transaction>({
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD in local time
         amount: 0,
         direction: 'expense',
         from_account_id: undefined,
@@ -119,6 +119,7 @@ export default function Transactions() {
                 await execute('create_transaction', { transaction: formData, tagIds: selectedTags });
             }
             await loadTransactions();
+            await loadBalances();
             setShowForm(false);
             resetForm();
         } catch (error) {
@@ -411,7 +412,16 @@ export default function Transactions() {
                                         <button
                                             key={dir}
                                             type="button"
-                                            onClick={() => setFormData({ ...formData, direction: dir as any })}
+                                            onClick={() => {
+                                                const newDir = dir as any;
+                                                setFormData({
+                                                    ...formData,
+                                                    direction: newDir,
+                                                    // Clear irrelevant accounts
+                                                    from_account_id: newDir === 'income' ? undefined : formData.from_account_id,
+                                                    to_account_id: newDir === 'expense' ? undefined : formData.to_account_id
+                                                });
+                                            }}
                                             className={`px-4 py-2 rounded capitalize transition-colors ${formData.direction === dir
                                                 ? dir === 'income' ? 'bg-green-600 text-white' :
                                                     dir === 'expense' ? 'bg-red-600 text-white' :

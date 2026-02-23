@@ -4,6 +4,7 @@ import { darkTheme } from '../utils/theme';
 import { formatCurrency } from '../utils/formatters';
 import type { Quotation, QuotationItem, Client, CompanySettings } from '../types';
 import { generatePDF } from '../utils/pdfGenerator';
+import { invoke } from '@tauri-apps/api/core';
 import Swal from 'sweetalert2';
 
 const DEFAULT_PAYMENT_TERMS = "• 30% Advance\n• 40% After Demo\n• 30% On Deployment";
@@ -202,17 +203,33 @@ export default function Quotations() {
 
         try {
             const details = await execute<Quotation>('get_quotation_details', { id: q.id });
-            await generatePDF('Quotation', details, companyInfo, '');
+            const { bytes, filename } = await generatePDF('Quotation', details, companyInfo, '');
+
+            // Save PDF via Tauri
+            const fullPath = await invoke<string>('save_pdf', { filename, data: Array.from(bytes) });
+
             Swal.fire({
-                title: 'PDF Generated',
-                text: 'Your quotation has been saved to your downloads folder.',
+                title: 'Quotation Ready',
+                html: `
+                    <div style="text-align: left; padding: 10px;">
+                        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">Proposal saved to:</p>
+                        <p style="color: #60a5fa; font-size: 11px; font-family: monospace; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; word-break: break-all;">${fullPath}</p>
+                        <button id="open-folder-btn" class="swal2-confirm swal2-styled" style="background-color: #2563eb; margin: 15px auto 0; display: block; width: 100%;">
+                            📂 Open Folder
+                        </button>
+                    </div>
+                `,
                 icon: 'success',
-                timer: 2000,
                 showConfirmButton: false,
-                toast: true,
-                position: 'top-end',
                 background: '#1e293b',
-                color: '#f1f5f9'
+                color: '#f1f5f9',
+                didOpen: () => {
+                    const btn = document.getElementById('open-folder-btn');
+                    btn?.addEventListener('click', () => {
+                        invoke('open_file_folder', { path: fullPath });
+                        Swal.close();
+                    });
+                }
             });
         } catch (error) {
             console.error('Failed to generate PDF:', error);

@@ -11,6 +11,7 @@ pub mod budgets;
 pub mod quotations;
 pub mod invoices;
 pub mod company_settings;
+pub mod utils;
 
 pub use accounts::*;
 pub use categories::*;
@@ -25,3 +26,4 @@ pub use budgets::*;
 pub use quotations::*;
 pub use invoices::*;
 pub use company_settings::*;
+pub use utils::*;

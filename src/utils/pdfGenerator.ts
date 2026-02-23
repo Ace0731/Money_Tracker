@@ -2,12 +2,23 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Quotation, Invoice, CompanySettings } from '../types';
 
+/**
+ * Sanitizes text for PDF rendering by replacing the Rupee symbol
+ * and removing problematic hidden characters.
+ */
+const sanitize = (text: string): string => {
+    if (!text) return '';
+    return text
+        .replace(/₹/g, 'Rs.')
+        .replace(/[^\x00-\x7F\u0900-\u097F]/g, ''); // Allow ASCII and Devanagari (Hindi) if needed, but mostly ASCII
+};
+
 export const generatePDF = async (
     type: 'Quotation' | 'Invoice',
     data: Quotation | Invoice,
     settings: CompanySettings,
     qrCodeDataUrl?: string
-) => {
+): Promise<{ bytes: Uint8Array; filename: string }> => {
     try {
         const doc = new jsPDF({
             orientation: 'portrait',
@@ -15,57 +26,47 @@ export const generatePDF = async (
             format: 'a4'
         });
 
-        // Robust color handling
+        // Global Reset for character spacing to prevent glitches
+        doc.setCharSpace(0);
+
+        // Theme and Color Setup
         let themeColor = settings.pdf_theme_color || '#2563eb';
         if (!themeColor.startsWith('#')) themeColor = '#2563eb';
 
-        const baseFont = settings.pdf_font_size || 10;
+        const hexToRgb = (hex: string): [number, number, number] => {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? [
+                parseInt(result[1], 16),
+                parseInt(result[2], 16),
+                parseInt(result[3], 16)
+            ] : [37, 99, 235];
+        };
 
+        const theme = hexToRgb(themeColor);
+        const baseFont = settings.pdf_font_size || 10;
         const cleanCurrency = (val: number) =>
-            'Rs. ' +
-            (val || 0).toLocaleString('en-IN', {
+            'Rs. ' + (val || 0).toLocaleString('en-IN', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
 
-        const hexToRgb = (hex: string) => {
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-            return result ? {
-                r: parseInt(result[1], 16),
-                g: parseInt(result[2], 16),
-                b: parseInt(result[3], 16)
-            } : { r: 37, g: 99, b: 235 }; // Fallback to blue
-        };
-
-        const theme = hexToRgb(themeColor);
-
         if (type === 'Invoice') {
-            renderInvoice(
-                doc,
-                data as Invoice,
-                settings,
-                theme,
-                baseFont,
-                cleanCurrency,
-                qrCodeDataUrl
-            );
+            renderInvoice(doc, data as Invoice, settings, theme, baseFont, cleanCurrency, qrCodeDataUrl);
         } else {
-            renderQuotation(
-                doc,
-                data as Quotation,
-                settings,
-                theme,
-                baseFont,
-                cleanCurrency
-            );
+            renderQuotation(doc, data as Quotation, settings, theme, baseFont, cleanCurrency);
         }
 
-        const number =
-            type === 'Invoice'
-                ? (data as Invoice).invoice_number
-                : (data as Quotation).quotation_number;
+        const number = type === 'Invoice'
+            ? (data as Invoice).invoice_number
+            : (data as Quotation).quotation_number;
 
-        doc.save(`${type}_${number}.pdf`);
+        const filename = `${type}_${number}.pdf`;
+
+        // Return arraybuffer for Tauri-based saving
+        return {
+            bytes: new Uint8Array(doc.output('arraybuffer')),
+            filename
+        };
     } catch (error) {
         console.error('PDF Generator Error:', error);
         throw error;
@@ -73,523 +74,8 @@ export const generatePDF = async (
 };
 
 /* ----------------------------------------------------- */
-/* SHARED COMPONENTS */
+/* SHARED RENDERERS */
 /* ----------------------------------------------------- */
-
-const renderHeader = (
-    doc: jsPDF,
-    title: string,
-    docNumber: string,
-    date: string,
-    settings: CompanySettings,
-    theme: { r: number; g: number; b: number },
-    baseFont: number
-) => {
-    const pageWidth = doc.internal.pageSize.width;
-    const margin = 40;
-
-    // Colored Header bar
-    doc.setFillColor(theme.r, theme.g, theme.b);
-    doc.rect(0, 0, pageWidth, 50, 'F');
-
-    // Company Logo
-    if (settings.company_logo) {
-        try {
-            const format = settings.company_logo.includes('png') ? 'PNG' : 'JPEG';
-            doc.addImage(settings.company_logo, format, margin, 15, 35, 35);
-        } catch { }
-    }
-
-    // Document Title
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(baseFont + 16);
-    doc.setTextColor(255, 255, 255);
-    doc.text(title.toUpperCase(), pageWidth - margin, 32, { align: 'right' });
-
-    // Document Details
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(baseFont - 1);
-    doc.setFont('helvetica', 'normal');
-
-    // Create a compact stack for number and date
-    doc.text(`${title} #: ${docNumber} | Date: ${date}`, pageWidth - margin, 42, { align: 'right' });
-
-    return 75; // Starting Y for next section
-};
-
-const renderAddressBlock = (
-    doc: jsPDF,
-    label: string,
-    name: string,
-    address: string | undefined,
-    phone: string | undefined,
-    email: string | undefined,
-    gst: string | undefined,
-    x: number,
-    y: number,
-    baseFont: number
-) => {
-    let currentY = y;
-
-    // Label
-    doc.setFontSize(baseFont - 2);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(100, 116, 139); // Slate-500
-    doc.text(label.toUpperCase(), x, currentY);
-    currentY += 12;
-
-    // Name
-    doc.setFontSize(baseFont + 1);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42); // Slate-900
-    doc.text(name, x, currentY);
-    currentY += 12;
-
-    // Details
-    doc.setFontSize(baseFont - 1);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(51, 65, 85); // Slate-700
-
-    if (address) {
-        const addrLines = doc.splitTextToSize(address, 220);
-        doc.text(addrLines, x, currentY);
-        currentY += (addrLines.length * 10);
-    }
-
-    if (phone || email) {
-        doc.text(`${phone || ''}`, x, currentY);
-        if (email) {
-            currentY += 10;
-            doc.text(`${email}`, x, currentY);
-        }
-        currentY += 10;
-    }
-
-    if (gst) {
-        doc.setFont('helvetica', 'bold');
-        doc.text(`GSTIN: ${gst}`, x, currentY);
-        currentY += 10;
-    }
-
-    return currentY;
-};
-
-/* ----------------------------------------------------- */
-/* QUOTATION RENDERER */
-/* ----------------------------------------------------- */
-
-const renderQuotation = (
-    doc: jsPDF,
-    data: Quotation,
-    settings: CompanySettings,
-    theme: { r: number; g: number; b: number },
-    baseFont: number,
-    cleanCurrency: (val: number) => string
-) => {
-    const pageWidth = doc.internal.pageSize.width;
-    const margin = 40;
-    let currentY = renderHeader(doc, 'Quotation', data.quotation_number, data.issue_date, settings, theme, baseFont);
-
-    // Client Info
-    renderAddressBlock(
-        doc,
-        'Proposal For',
-        data.client_business_name || data.client_name || 'Valued Client',
-        data.client_address,
-        data.client_phone,
-        data.client_email,
-        undefined, // No GST for quote usually, or add if needed
-        margin,
-        currentY,
-        baseFont
-    );
-
-    // Project Title
-    currentY += 75;
-    doc.setFontSize(baseFont + 4);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(theme.r, theme.g, theme.b);
-    doc.text(data.project_title || 'Project Proposal', margin, currentY);
-
-    // Line separator
-    doc.setDrawColor(theme.r, theme.g, theme.b);
-    doc.setLineWidth(1);
-    doc.line(margin, currentY + 3, margin + 200, currentY + 3);
-
-    currentY += 20;
-
-    // Items Table
-    const tableData = data.items?.map((item, i) => {
-        let description = item.description;
-        // Append features if available for "3 lines description" effect
-        if (item.features) {
-            const featuresList = item.features.split('\n')
-                .slice(0, 3) // Max 3 lines as requested
-                .map(f => f.trim().replace(/^[•*-]\s*/, ''))
-                .filter(f => f.length > 0);
-
-            if (featuresList.length > 0) {
-                // Add features with bullet points to description
-                description += '\n' + featuresList.map(f => `• ${f}`).join('\n');
-            }
-        }
-        if (item.timeline) {
-            description += `\nTimeline: ${item.timeline}`;
-        }
-
-        return [
-            i + 1,
-            description,
-            cleanCurrency(item.amount)
-        ];
-    }) || [];
-
-    autoTable(doc, {
-        startY: currentY,
-        head: [['#', 'Description & Features', 'Amount']],
-        body: tableData,
-        margin: { left: margin, right: margin },
-        theme: 'grid',
-        headStyles: {
-            fillColor: [theme.r, theme.g, theme.b],
-            textColor: 255,
-            fontSize: baseFont,
-            fontStyle: 'bold',
-            halign: 'left'
-        },
-        bodyStyles: {
-            fontSize: baseFont - 1,
-            textColor: 50,
-            cellPadding: 8,
-            valign: 'top'
-        },
-        columnStyles: {
-            0: { cellWidth: 30, halign: 'center' },
-            1: { cellWidth: 'auto' },
-            2: { cellWidth: 100, halign: 'right', fontStyle: 'bold' }
-        },
-        didParseCell: () => {
-            // Optional: custom styling for description column to ensure wrapping
-        }
-    });
-
-    currentY = (doc as any).lastAutoTable.finalY + 20;
-
-    // Total
-    renderTotalBlock(doc, data.total_amount, undefined, undefined, undefined, currentY, pageWidth, margin, baseFont, theme, cleanCurrency);
-
-    currentY += 40;
-
-    // Terms & Conditions block
-    renderTermsBlock(doc, data.payment_terms, data.terms_conditions, margin, pageWidth, currentY, baseFont);
-
-    // Bottom Signature
-    renderSignatureAndFooter(doc, settings, margin, pageWidth, doc.internal.pageSize.height, baseFont, theme);
-};
-
-/* ----------------------------------------------------- */
-/* INVOICE RENDERER */
-/* ----------------------------------------------------- */
-
-const renderInvoice = (
-    doc: jsPDF,
-    data: Invoice,
-    settings: CompanySettings,
-    theme: { r: number; g: number; b: number },
-    baseFont: number,
-    cleanCurrency: (val: number) => string,
-    qrCodeDataUrl?: string
-) => {
-    const pageWidth = doc.internal.pageSize.width;
-    const margin = 40;
-    let currentY = renderHeader(doc, 'Invoice', data.invoice_number, data.issue_date, settings, theme, baseFont);
-
-    // Two Columns: Billed To | From
-    const colWidth = (pageWidth - (margin * 2)) / 2;
-
-    // Billed To
-    renderAddressBlock(
-        doc,
-        'Billed To',
-        data.client_business_name || data.client_name || 'Client',
-        data.client_address,
-        data.client_phone,
-        data.client_email,
-        (data as any).client_gst, // Assuming strict typing might miss this if not in interface, checking fallback
-        margin,
-        currentY,
-        baseFont
-    );
-
-    // From
-    renderAddressBlock(
-        doc,
-        'From',
-        settings.company_name,
-        settings.company_address,
-        settings.company_phone,
-        settings.company_email,
-        undefined, // Company GST usually in settings or footer, but we can add if available
-        margin + colWidth,
-        currentY,
-        baseFont
-    );
-
-    currentY += 50;
-
-    // Project Summary (Progressive Invoicing)
-    const summary = (data as any).projectSummary;
-    if (summary) {
-        autoTable(doc, {
-            startY: currentY,
-            head: [['Project Total Value', 'Received to Date', 'Balance Remaining']],
-            body: [[
-                cleanCurrency(summary.totalValue),
-                cleanCurrency(summary.paidAmount),
-                cleanCurrency(summary.pendingAmount)
-            ]],
-            margin: { left: margin, right: margin },
-            theme: 'grid', // Plain grid
-            headStyles: {
-                fillColor: [248, 250, 252], // Slate-50
-                textColor: [71, 85, 105], // Slate-600
-                fontSize: 8,
-                fontStyle: 'bold',
-                halign: 'center',
-                lineColor: [226, 232, 240], // Slate-200
-                lineWidth: 0.1
-            },
-            bodyStyles: {
-                fontSize: 10,
-                textColor: [30, 41, 59], // Slate-800
-                halign: 'center',
-                fontStyle: 'bold',
-                cellPadding: 8,
-                lineColor: [226, 232, 240],
-                lineWidth: 0.1
-            },
-            columnStyles: {
-                0: { cellWidth: 'auto' },
-                1: { textColor: [22, 163, 74] }, // Green-600
-                2: { textColor: [37, 99, 235] }  // Blue-600
-            }
-        });
-
-        currentY = (doc as any).lastAutoTable.finalY + 30;
-    } else {
-        currentY += 30;
-    }
-
-    // Reset any potential spacing issues
-    doc.setCharSpace(0);
-    doc.setFont('helvetica', 'normal');
-
-    // Items Table
-    const tableData = data.items?.map((item, i) => [
-        i + 1,
-        (item.description || '').replace(/[^\x20-\x7E]/g, ''), // Sanitize only printable ASCII
-        item.quantity,
-        cleanCurrency(item.rate),
-        cleanCurrency(item.amount)
-    ]) || [];
-
-    console.log('PDF Table Data:', JSON.stringify(tableData, null, 2));
-
-    autoTable(doc, {
-        startY: currentY,
-        head: [['#', 'Description', 'Qty', 'Rate', 'Amount']],
-        body: tableData,
-        margin: { left: margin, right: margin },
-        theme: 'grid',
-        headStyles: {
-            fillColor: [theme.r, theme.g, theme.b],
-            textColor: 255,
-            fontSize: baseFont,
-            fontStyle: 'bold',
-            font: 'helvetica'
-        },
-        bodyStyles: {
-            fontSize: baseFont - 1,
-            textColor: 50,
-            cellPadding: 8,
-            font: 'helvetica'
-        },
-        columnStyles: {
-            0: { cellWidth: 30, halign: 'center' },
-            1: { cellWidth: 'auto' },
-            2: { cellWidth: 40, halign: 'center' },
-            3: { cellWidth: 70, halign: 'right' },
-            4: { cellWidth: 80, halign: 'right', fontStyle: 'bold' }
-        }
-    });
-
-    currentY = (doc as any).lastAutoTable.finalY + 20;
-
-    // Notes
-    if (data.notes) {
-        doc.setFontSize(baseFont - 1);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(100, 116, 139);
-        doc.text('NOTES:', margin, currentY);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(51, 65, 85);
-        const noteLines = doc.splitTextToSize(data.notes, 300);
-        doc.text(noteLines, margin, currentY + 12);
-    }
-
-    // Totals Block
-    const discount = data.discount || 0;
-    const subtotal = data.items?.reduce((sum, i) => sum + (i.amount || 0), 0) || 0;
-    const afterDiscount = subtotal - discount;
-    const tax = (afterDiscount * (data.tax_percentage || 0)) / 100;
-
-    renderTotalBlock(doc, data.total_amount, subtotal, discount, { percent: data.tax_percentage || 0, amount: tax }, currentY, pageWidth, margin, baseFont, theme, cleanCurrency);
-
-    // Bank & Payment Info
-    currentY += 80; // Move down
-    // Ensure we have space
-    if (currentY > doc.internal.pageSize.height - 150) {
-        doc.addPage();
-        currentY = 40;
-    }
-
-    renderPaymentBlock(doc, settings, margin, currentY, baseFont, theme, qrCodeDataUrl);
-
-    // Signature
-    renderSignatureAndFooter(doc, settings, margin, pageWidth, doc.internal.pageSize.height, baseFont, theme);
-};
-
-/* ----------------------------------------------------- */
-/* COMMON BLOCKS */
-/* ----------------------------------------------------- */
-
-const renderTotalBlock = (
-    doc: jsPDF,
-    total: number,
-    subtotal: number | undefined,
-    discount: number | undefined,
-    tax: { percent: number, amount: number } | undefined,
-    y: number,
-    pageWidth: number,
-    margin: number,
-    baseFont: number,
-    theme: { r: number; g: number; b: number },
-    clean: (n: number) => string
-) => {
-    const startX = pageWidth - margin - 200;
-    let currentY = y;
-
-    if (subtotal !== undefined) {
-        doc.setFontSize(baseFont);
-        doc.setTextColor(100, 116, 139);
-        doc.text('Subtotal:', startX, currentY);
-        doc.text(clean(subtotal), pageWidth - margin, currentY, { align: 'right' });
-        currentY += 15;
-    }
-
-    if (discount !== undefined && discount > 0) {
-        doc.setTextColor(239, 68, 68); // Red for discount
-        doc.text('Discount:', startX, currentY);
-        doc.text(`- ${clean(discount)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 15;
-    }
-
-    if (tax && tax.amount > 0) {
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Tax (${tax.percent}%):`, startX, currentY);
-        doc.text(clean(tax.amount), pageWidth - margin, currentY, { align: 'right' });
-        currentY += 15;
-    }
-
-    // Divider
-    doc.setDrawColor(226, 232, 240);
-    doc.line(startX, currentY, pageWidth - margin, currentY);
-    currentY += 15;
-
-    // Grand Total
-    doc.setFontSize(baseFont + 4);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(theme.r, theme.g, theme.b);
-    doc.text('Total:', startX, currentY);
-    doc.text(clean(total), pageWidth - margin, currentY, { align: 'right' });
-};
-
-const renderPaymentBlock = (
-    doc: jsPDF,
-    settings: CompanySettings,
-    x: number,
-    y: number,
-    baseFont: number,
-    theme: { r: number; g: number; b: number },
-    qrUrl?: string
-) => {
-    // Payment Info Container
-
-    doc.setFontSize(baseFont);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(theme.r, theme.g, theme.b);
-    doc.text('Bank Details & Payment Info', x, y);
-
-    doc.setFontSize(baseFont - 1);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(51, 65, 85);
-
-    let textY = y + 15;
-    if (settings.bank_name) doc.text(`Bank: ${settings.bank_name}`, x, textY);
-    if (settings.account_number) { textY += 12; doc.text(`Account No: ${settings.account_number}`, x, textY); }
-    if (settings.ifsc_code) { textY += 12; doc.text(`IFSC: ${settings.ifsc_code}`, x, textY); }
-    if (settings.upi_id) { textY += 12; doc.text(`UPI ID: ${settings.upi_id}`, x, textY); }
-
-    // QR Code
-    if (qrUrl) {
-        doc.addImage(qrUrl, 'PNG', x + 250, y, 70, 70);
-    }
-};
-
-const renderTermsBlock = (
-    doc: jsPDF,
-    paymentTerms: string | undefined,
-    terms: string | undefined,
-    x: number,
-    pageWidth: number,
-    y: number,
-    baseFont: number
-) => {
-    if (!paymentTerms && !terms) return;
-
-    let currentY = y;
-    const maxWid = pageWidth - (x * 2);
-
-    if (paymentTerms) {
-        doc.setFontSize(baseFont);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(15, 23, 42);
-        doc.text('Payment Terms:', x, currentY);
-        currentY += 10;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(baseFont - 1);
-        doc.setTextColor(51, 65, 85);
-        const lines = doc.splitTextToSize(paymentTerms, maxWid);
-        doc.text(lines, x, currentY);
-        currentY += (lines.length * 10) + 10;
-    }
-
-    if (terms) {
-        doc.setFontSize(baseFont);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(15, 23, 42);
-        doc.text('Terms & Conditions:', x, currentY);
-        currentY += 10;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(baseFont - 1);
-        doc.setTextColor(51, 65, 85);
-        const lines = doc.splitTextToSize(terms, maxWid);
-        doc.text(lines, x, currentY);
-    }
-};
 
 const renderSignatureAndFooter = (
     doc: jsPDF,
@@ -598,9 +84,8 @@ const renderSignatureAndFooter = (
     pageWidth: number,
     pageHeight: number,
     baseFont: number,
-    theme: { r: number; g: number; b: number }
+    theme: [number, number, number]
 ) => {
-    // Signature at fixed position near bottom
     const sigY = pageHeight - 110;
 
     doc.setFontSize(baseFont - 1);
@@ -610,19 +95,290 @@ const renderSignatureAndFooter = (
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text(settings.owner_name || settings.company_name, pageWidth - margin, sigY + 40, { align: 'right' });
+    doc.text(sanitize(settings.owner_name || settings.company_name), pageWidth - margin, sigY + 40, { align: 'right' });
 
-    // Footer - Page Numbers & Copyright
     const totalPages = doc.getNumberOfPages();
     for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i);
-        doc.setDrawColor(theme.r, theme.g, theme.b);
+        doc.setDrawColor(theme[0], theme[1], theme[2]);
         doc.setLineWidth(2);
-        doc.line(0, pageHeight - 15, pageWidth, pageHeight - 15); // Bottom colored strip
+        doc.line(0, pageHeight - 15, pageWidth, pageHeight - 15);
 
         doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184); // Muted
-        doc.text(`© ${settings.company_name}`, margin, pageHeight - 25);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`© ${sanitize(settings.company_name)}`, margin, pageHeight - 25);
         doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 25, { align: 'right' });
     }
+};
+
+const renderPaymentAndTotals = (
+    doc: jsPDF,
+    data: any,
+    settings: CompanySettings,
+    margin: number,
+    currentY: number,
+    baseFont: number,
+    theme: [number, number, number],
+    clean: (n: number) => string,
+    qrUrl?: string
+) => {
+    const pageWidth = doc.internal.pageSize.width;
+    const contentWidth = pageWidth - (margin * 2);
+
+    // Totals Table (On the Right)
+    const subtotal = data.items?.reduce((sum: number, i: any) => sum + (i.amount || 0), 0) || 0;
+    const discount = data.discount || 0;
+    const afterDiscount = subtotal - discount;
+    const taxPercent = (data as any).tax_percentage || 0;
+    const taxAmount = (afterDiscount * taxPercent) / 100;
+    const total = (data as any).total_amount;
+
+    autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin + (contentWidth * 0.5), right: margin },
+        body: [
+            ['Subtotal:', { content: clean(subtotal), styles: { halign: 'right' as const } }],
+            ...(discount > 0 ? [['Discount:', { content: `- ${clean(discount)}`, styles: { halign: 'right' as const, textColor: [239, 68, 68] as [number, number, number] } }]] : []),
+            ...(taxAmount > 0 ? [[`Tax (${taxPercent}%):`, { content: clean(taxAmount), styles: { halign: 'right' as const } }]] : []),
+            [{ content: 'Total Amount:', styles: { fontStyle: 'bold' as const, fontSize: baseFont + 2, textColor: theme } },
+            { content: clean(total), styles: { halign: 'right' as const, fontStyle: 'bold' as const, fontSize: baseFont + 2, textColor: theme } }]
+        ],
+        theme: 'plain',
+        styles: { fontSize: baseFont, cellPadding: 4, textColor: [71, 85, 105] as [number, number, number] },
+        columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 100 } }
+    });
+
+    const finalTotalsY = (doc as any).lastAutoTable.finalY;
+
+    // Filter Payment Info to hide empty rows
+    const paymentRows = [];
+    if (settings.bank_name && settings.bank_name !== 'N/A') paymentRows.push(`Bank: ${settings.bank_name}`);
+    if (settings.account_number && settings.account_number !== 'N/A') paymentRows.push(`A/C: ${settings.account_number}`);
+    if (settings.ifsc_code && settings.ifsc_code !== 'N/A') paymentRows.push(`IFSC: ${settings.ifsc_code}`);
+    if (settings.upi_id && settings.upi_id !== 'N/A') paymentRows.push(`UPI: ${settings.upi_id}`);
+
+    if (paymentRows.length > 0) {
+        autoTable(doc, {
+            startY: currentY,
+            margin: { left: margin, right: margin + (contentWidth * 0.5) },
+            head: [['PAYMENT INFORMATION']],
+            body: [[{
+                content: paymentRows.join('\n'),
+                styles: { fontSize: baseFont - 1 }
+            }]],
+            theme: 'plain',
+            headStyles: { fontSize: baseFont - 2, fontStyle: 'bold' as const, textColor: theme, cellPadding: { bottom: 2 } },
+            styles: { cellPadding: 0 }
+        });
+    }
+
+    if (qrUrl) {
+        doc.addImage(qrUrl, 'PNG', margin + (contentWidth * 0.35), currentY + 5, 60, 60);
+    }
+
+    return Math.max(finalTotalsY, (doc as any).lastAutoTable.finalY || 0) + 20;
+};
+
+/* ----------------------------------------------------- */
+/* QUOTATION TEMPLATE */
+/* ----------------------------------------------------- */
+
+const renderQuotation = (
+    doc: jsPDF,
+    data: Quotation,
+    settings: CompanySettings,
+    theme: [number, number, number],
+    baseFont: number,
+    clean: (n: number) => string
+) => {
+    const margin = 40;
+    const pageWidth = doc.internal.pageSize.width;
+
+    // Modern Header Block
+    doc.setFillColor(theme[0], theme[1], theme[2]);
+    doc.rect(0, 0, pageWidth, 120, 'F');
+
+    if (settings.company_logo) {
+        try { doc.addImage(settings.company_logo, 'PNG', margin, 20, 45, 45); } catch { }
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(baseFont + 12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitize(settings.company_name.toUpperCase()), margin + (settings.company_logo ? 55 : 0), 40);
+
+    doc.setFontSize(baseFont - 1);
+    doc.setFont('helvetica', 'normal');
+    const displayAddr = settings.company_address?.split(',').slice(0, 2).join(',') || '';
+    doc.text(sanitize(displayAddr), margin + (settings.company_logo ? 55 : 0), 52);
+
+    doc.setFontSize(baseFont + 20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('QUOTATION', pageWidth - margin, 45, { align: 'right' });
+
+    doc.setFontSize(baseFont);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Ref: ${data.quotation_number}`, pageWidth - margin, 65, { align: 'right' });
+    doc.text(`Date: ${data.issue_date}`, pageWidth - margin, 77, { align: 'right' });
+
+    // Client and Quote Info Gird
+    autoTable(doc, {
+        startY: 135,
+        margin: { left: margin, right: margin },
+        head: [['PROPOSAL FOR', 'DOCUMENT DETAILS']],
+        body: [[
+            { content: sanitize(`${data.client_business_name || data.client_name}\n${data.client_address || ''}\n${data.client_phone || ''}`), styles: { cellPadding: { top: 5, bottom: 10 } } },
+            { content: sanitize(`${data.project_title || 'General Services'}\nValid Until: ${data.valid_till}`), styles: { cellPadding: { top: 5, bottom: 10 } } }
+        ]],
+        theme: 'plain',
+        headStyles: { fontSize: baseFont - 2, textColor: theme, fontStyle: 'bold' as const },
+        styles: { fontSize: baseFont, textColor: [15, 23, 42] as [number, number, number] }
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 10;
+
+    // Items Table
+    const tableData = data.items?.map((item, i) => [
+        i + 1,
+        { content: sanitize(`${item.description}\n${item.features ? item.features.split('\n').map(f => `• ${f.trim()}`).join('\n') : ''}`), styles: { fontSize: baseFont - 1 } },
+        { content: clean(item.amount), styles: { halign: 'right' as const, fontStyle: 'bold' as const } }
+    ]) || [];
+
+    autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin, right: margin },
+        head: [['#', 'Description & Scoping', 'Amount']],
+        body: tableData as any,
+        theme: 'grid',
+        headStyles: { fillColor: theme, textColor: 255, fontSize: baseFont, fontStyle: 'bold' as const },
+        bodyStyles: { cellPadding: 10, valign: 'top' as const },
+        columnStyles: { 0: { cellWidth: 30, halign: 'center' as const }, 2: { cellWidth: 100 } }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 20;
+
+    // Totals and Payment
+    currentY = renderPaymentAndTotals(doc, data, settings, margin, currentY, baseFont, theme, clean);
+
+    // Terms
+    if (data.payment_terms || data.terms_conditions) {
+        autoTable(doc, {
+            startY: currentY,
+            margin: { left: margin, right: margin + (pageWidth - margin * 2) * 0.4 },
+            head: [['TERMS & CONDITIONS']],
+            body: [[sanitize(`${data.payment_terms || ''}\n${data.terms_conditions || ''}`)]],
+            theme: 'plain',
+            headStyles: { fontSize: baseFont - 2, textColor: theme, fontStyle: 'bold' as const },
+            styles: { fontSize: baseFont - 2, textColor: [100, 116, 139] as [number, number, number] }
+        });
+    }
+
+    renderSignatureAndFooter(doc, settings, margin, pageWidth, doc.internal.pageSize.height, baseFont, theme);
+};
+
+/* ----------------------------------------------------- */
+/* INVOICE TEMPLATE */
+/* ----------------------------------------------------- */
+
+const renderInvoice = (
+    doc: jsPDF,
+    data: Invoice,
+    settings: CompanySettings,
+    theme: [number, number, number],
+    baseFont: number,
+    clean: (n: number) => string,
+    qrUrl?: string
+) => {
+    const margin = 40;
+    const pageWidth = doc.internal.pageSize.width;
+
+    // Header Color Block
+    doc.setFillColor(theme[0], theme[1], theme[2]);
+    doc.rect(0, 0, pageWidth, 120, 'F');
+
+    if (settings.company_logo) {
+        try { doc.addImage(settings.company_logo, 'PNG', margin, 20, 45, 45); } catch { }
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(baseFont + 12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitize(settings.company_name.toUpperCase()), margin + (settings.company_logo ? 55 : 0), 40);
+
+    doc.setFontSize(baseFont - 1);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitize(settings.company_address || ''), margin + (settings.company_logo ? 55 : 0), 52);
+
+    doc.setFontSize(baseFont * 3);
+    doc.text('INVOICE', pageWidth - margin, 45, { align: 'right' });
+
+    doc.setFontSize(baseFont);
+    doc.text(`# ${data.invoice_number}`, pageWidth - margin, 65, { align: 'right' });
+    doc.text(`Due: ${data.due_date}`, pageWidth - margin, 77, { align: 'right' });
+
+    // Billed To Grid
+    autoTable(doc, {
+        startY: 135,
+        margin: { left: margin, right: margin },
+        head: [['BILLED TO', 'INVOICE DETAILS']],
+        body: [[
+            { content: sanitize(`${data.client_business_name || data.client_name}\n${data.client_address || ''}\n${data.client_email || ''}`), styles: { cellPadding: { top: 5, bottom: 10 } } },
+            { content: sanitize(`Project: ${data.project_name}\nStage: ${data.stage}\nDate: ${data.issue_date}`), styles: { cellPadding: { top: 5, bottom: 10 } } }
+        ]],
+        theme: 'plain',
+        headStyles: { fontSize: baseFont - 2, textColor: theme, fontStyle: 'bold' as const },
+        styles: { fontSize: baseFont, textColor: [15, 23, 42] as [number, number, number] }
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 10;
+
+    // Project Progress Summary
+    const summary = (data as any).projectSummary;
+    if (summary) {
+        autoTable(doc, {
+            startY: currentY,
+            margin: { left: margin, right: margin },
+            body: [[
+                { content: `Total Value: ${clean(summary.totalValue)}    |    Received: ${clean(summary.paidAmount)}    |    Pending: ${clean(summary.pendingAmount)}`, styles: { halign: 'center' as const, fontStyle: 'bold' as const, textColor: [100, 116, 139] as [number, number, number] } }
+            ]],
+            theme: 'plain',
+            styles: { fontSize: baseFont - 2, cellPadding: 8, fillColor: [248, 250, 252] as [number, number, number] }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // Line Items
+    const tableData = data.items?.map((item, i) => [
+        i + 1,
+        sanitize(item.description),
+        item.quantity,
+        clean(item.rate),
+        { content: clean(item.amount), styles: { halign: 'right' as const, fontStyle: 'bold' as const } }
+    ]) || [];
+
+    autoTable(doc, {
+        startY: currentY,
+        margin: { left: margin, right: margin },
+        head: [['#', 'Description', 'Qty', 'Rate', 'Total']],
+        body: tableData as any,
+        theme: 'grid',
+        headStyles: { fillColor: theme, textColor: 255, fontSize: baseFont, fontStyle: 'bold' as const },
+        bodyStyles: { cellPadding: 8 },
+        columnStyles: { 0: { cellWidth: 30, halign: 'center' as const }, 2: { cellWidth: 40, halign: 'center' as const }, 3: { cellWidth: 80, halign: 'right' as const }, 4: { cellWidth: 90 } }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 20;
+
+    // Totals and Payment
+    currentY = renderPaymentAndTotals(doc, data, settings, margin, currentY, baseFont, theme, clean, qrUrl);
+
+    // Notes
+    if (data.notes) {
+        doc.setFontSize(baseFont - 2);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(148, 163, 184);
+        doc.text('INTERNAL NOTES:', margin, currentY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitize(data.notes), margin, currentY + 10);
+    }
+
+    renderSignatureAndFooter(doc, settings, margin, pageWidth, doc.internal.pageSize.height, baseFont, theme);
 };

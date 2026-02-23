@@ -82,6 +82,8 @@ fn main() {
             delete_budget,
             get_budget_summary,
             get_budget_report,
+            save_pdf,
+            open_file_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

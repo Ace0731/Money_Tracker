@@ -5,6 +5,7 @@ import { formatCurrency } from '../utils/formatters';
 import type { Invoice, InvoiceItem, InvoicePayment, Project, CompanySettings } from '../types';
 import { generatePDF } from '../utils/pdfGenerator';
 import { QRCodeCanvas } from 'qrcode.react';
+import { invoke } from '@tauri-apps/api/core';
 import Swal from 'sweetalert2';
 
 export default function Invoices() {
@@ -89,10 +90,10 @@ export default function Invoices() {
 
         if (type === 'Advance') {
             amount = Math.round(total * 0.30);
-            desc = `Advance Payment (30% of ${formatCurrency(total)})`;
+            desc = `Advance Payment (30% of Rs. ${total.toLocaleString('en-IN')})`;
         } else if (type === 'Milestone') {
             amount = Math.round(total * 0.50);
-            desc = `Milestone Payment (50% of ${formatCurrency(total)})`;
+            desc = `Milestone Payment (50% of Rs. ${total.toLocaleString('en-IN')})`;
         } else {
             amount = projectSummary.pendingAmount;
             desc = `Final Balance Payment`;
@@ -311,17 +312,33 @@ export default function Invoices() {
 
             const pdfData = { ...details, projectSummary: summary };
 
-            await generatePDF('Invoice', pdfData, companyInfo, qrDataUrl);
+            const { bytes, filename } = await generatePDF('Invoice', pdfData, companyInfo, qrDataUrl);
+
+            // Save PDF via Tauri
+            const fullPath = await invoke<string>('save_pdf', { filename, data: Array.from(bytes) });
+
             Swal.fire({
                 title: 'PDF Exported',
-                text: 'Invoice has been saved to your downloads.',
+                html: `
+                    <div style="text-align: left; padding: 10px;">
+                        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 8px;">Invoice saved to:</p>
+                        <p style="color: #60a5fa; font-size: 11px; font-family: monospace; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; word-break: break-all;">${fullPath}</p>
+                        <button id="open-folder-btn" class="swal2-confirm swal2-styled" style="background-color: #2563eb; margin: 15px auto 0; display: block; width: 100%;">
+                            📂 Open Folder
+                        </button>
+                    </div>
+                `,
                 icon: 'success',
-                timer: 2000,
                 showConfirmButton: false,
-                toast: true,
-                position: 'top-end',
                 background: '#1e293b',
-                color: '#f1f5f9'
+                color: '#f1f5f9',
+                didOpen: () => {
+                    const btn = document.getElementById('open-folder-btn');
+                    btn?.addEventListener('click', () => {
+                        invoke('open_file_folder', { path: fullPath });
+                        Swal.close();
+                    });
+                }
             });
         } catch (error) {
             console.error('Failed to generate PDF:', error);

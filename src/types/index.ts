@@ -3,6 +3,7 @@ export interface Account {
     name: string;
     account_type: string;
     opening_balance: number;
+    current_balance?: number;
     notes?: string;
 }
 

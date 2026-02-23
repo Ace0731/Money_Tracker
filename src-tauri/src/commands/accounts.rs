@@ -9,6 +9,7 @@ pub struct Account {
     pub name: String,
     pub account_type: String,
     pub opening_balance: f64,
+    pub current_balance: Option<f64>,
     pub notes: Option<String>,
 }
 
@@ -17,7 +18,15 @@ pub fn get_accounts(db: State<DbConnection>) -> Result<Vec<Account>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, name, type, opening_balance, notes FROM accounts ORDER BY name")
+        .prepare("
+            SELECT 
+                a.id, a.name, a.type, a.opening_balance, a.notes,
+                a.opening_balance + 
+                COALESCE((SELECT SUM(amount) FROM transactions WHERE to_account_id = a.id), 0) -
+                COALESCE((SELECT SUM(amount) FROM transactions WHERE from_account_id = a.id), 0) as current_balance
+            FROM accounts a 
+            ORDER BY a.name
+        ")
         .map_err(|e| e.to_string())?;
     
     let accounts = stmt
@@ -27,6 +36,7 @@ pub fn get_accounts(db: State<DbConnection>) -> Result<Vec<Account>, String> {
                 name: row.get(1)?,
                 account_type: row.get(2)?,
                 opening_balance: row.get(3)?,
+                current_balance: Some(row.get(5)?),
                 notes: row.get(4)?,
             })
         })

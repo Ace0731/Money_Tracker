@@ -104,7 +104,7 @@ pub fn get_transaction_balances(
         let incoming_before: f64 = if let Some(ref start) = start_date {
             conn.query_row(
                 "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1 AND date < ?2",
-                [account_id.to_string(), start.clone()],
+                params![account_id, start.clone()],
                 |row| row.get(0)
             ).unwrap_or(0.0)
         } else {
@@ -114,7 +114,7 @@ pub fn get_transaction_balances(
         let outgoing_before: f64 = if let Some(ref start) = start_date {
             conn.query_row(
                 "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1 AND date < ?2",
-                [account_id.to_string(), start.clone()],
+                params![account_id, start.clone()],
                 |row| row.get(0)
             ).unwrap_or(0.0)
         } else {
@@ -127,7 +127,7 @@ pub fn get_transaction_balances(
         let incoming_upto: f64 = if let Some(ref end) = end_date {
             conn.query_row(
                 "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1 AND date <= ?2",
-                [account_id.to_string(), end.clone()],
+                params![account_id, end.clone()],
                 |row| row.get(0)
             ).unwrap_or(0.0)
         } else {
@@ -141,7 +141,7 @@ pub fn get_transaction_balances(
         let outgoing_upto: f64 = if let Some(ref end) = end_date {
             conn.query_row(
                 "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1 AND date <= ?2",
-                [account_id.to_string(), end.clone()],
+                params![account_id, end.clone()],
                 |row| row.get(0)
             ).unwrap_or(0.0)
         } else {
@@ -272,6 +272,16 @@ pub fn create_transaction(
 ) -> Result<i64, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
+    let mut from_account_id = transaction.from_account_id;
+    let mut to_account_id = transaction.to_account_id;
+
+    // Sanitize account IDs based on direction
+    match transaction.direction.as_str() {
+        "income" => from_account_id = None,
+        "expense" => to_account_id = None,
+        _ => {} // Transfers keep both
+    }
+
     conn.execute(
         "INSERT INTO transactions (date, amount, direction, from_account_id, to_account_id, category_id, client_id, project_id, investment_id, notes)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -279,8 +289,8 @@ pub fn create_transaction(
             transaction.date,
             transaction.amount,
             transaction.direction,
-            transaction.from_account_id,
-            transaction.to_account_id,
+            from_account_id,
+            to_account_id,
             transaction.category_id,
             transaction.client_id,
             transaction.project_id,
@@ -314,6 +324,16 @@ pub fn update_transaction(
     
     let id = transaction.id.ok_or("Transaction ID is required")?;
     
+    let mut from_account_id = transaction.from_account_id;
+    let mut to_account_id = transaction.to_account_id;
+
+    // Sanitize account IDs based on direction
+    match transaction.direction.as_str() {
+        "income" => from_account_id = None,
+        "expense" => to_account_id = None,
+        _ => {} // Transfers keep both
+    }
+
     conn.execute(
         "UPDATE transactions SET date = ?1, amount = ?2, direction = ?3, from_account_id = ?4, 
          to_account_id = ?5, category_id = ?6, client_id = ?7, project_id = ?8, investment_id = ?9, notes = ?10 
@@ -322,8 +342,8 @@ pub fn update_transaction(
             transaction.date,
             transaction.amount,
             transaction.direction,
-            transaction.from_account_id,
-            transaction.to_account_id,
+            from_account_id,
+            to_account_id,
             transaction.category_id,
             transaction.client_id,
             transaction.project_id,

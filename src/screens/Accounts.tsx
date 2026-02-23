@@ -80,7 +80,10 @@ export default function Accounts() {
                             </span>
                         </div>
                         <p className="text-2xl font-bold text-blue-400">
-                            {formatCurrency(account.opening_balance)}
+                            {formatCurrency(account.current_balance ?? account.opening_balance)}
+                        </p>
+                        <p className="text-[10px] text-slate-500 uppercase mt-1">
+                            Opening: {formatCurrency(account.opening_balance)}
                         </p>
                         {account.notes && <p className="text-sm text-slate-400 mt-2">{account.notes}</p>}
                     </div>

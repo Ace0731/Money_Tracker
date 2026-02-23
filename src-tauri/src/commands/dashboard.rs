@@ -33,33 +33,31 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
     let mut investment_balance = 0.0;
     let mut individual_accounts = Vec::new();
     
-    // Get all accounts
-    let mut accounts_stmt = conn.prepare(
-        "SELECT id, name, type, opening_balance FROM accounts"
-    ).map_err(|e| e.to_string())?;
+    // Get all accounts with their dynamic balances
+    let mut accounts_stmt = conn.prepare("
+        SELECT 
+            id, name, type, opening_balance,
+            (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = a.id) as incoming,
+            (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = a.id) as outgoing
+        FROM accounts a
+        ORDER BY name
+    ").map_err(|e| e.to_string())?;
     
-    let accounts_iter = accounts_stmt.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, f64>(3)?))
-    }).map_err(|e| e.to_string())?;
-    
-    for account_result in accounts_iter {
-        let (account_id, account_name, account_type, opening_balance) = account_result.map_err(|e| e.to_string())?;
-        
-        // Get incoming transactions
-        let incoming: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1",
-            [account_id],
-            |row| row.get(0)
-        ).unwrap_or(0.0);
-        
-        // Get outgoing transactions
-        let outgoing: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1",
-            [account_id],
-            |row| row.get(0)
-        ).unwrap_or(0.0);
+    let accounts_data = accounts_stmt.query_map([], |row| {
+        let id: i64 = row.get(0)?;
+        let name: String = row.get(1)?;
+        let account_type: String = row.get(2)?;
+        let opening_balance: f64 = row.get(3)?;
+        let incoming: f64 = row.get(4)?;
+        let outgoing: f64 = row.get(5)?;
         
         let current_balance = opening_balance + incoming - outgoing;
+        
+        Ok((id, name, account_type, current_balance))
+    }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, rusqlite::Error>>().map_err(|e| e.to_string())?;
+    
+    for (account_id, account_name, account_type, current_balance) in accounts_data {
+        let account_type_lower = account_type.to_lowercase();
         
         individual_accounts.push(AccountBalance {
             id: account_id,
@@ -68,7 +66,7 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
             balance: current_balance,
         });
 
-        match account_type.as_str() {
+        match account_type_lower.as_str() {
             "bank" => bank_balance += current_balance,
             "cash" => cash_balance += current_balance,
             "investment" => investment_balance += current_balance,
