@@ -13,6 +13,7 @@ import Budget from './screens/Budget';
 import Quotations from './screens/Quotations';
 import Invoices from './screens/Invoices';
 import Settings from './screens/Settings';
+import DecisionMaker from './screens/DecisionMaker';
 
 function App() {
     useEffect(() => {
@@ -35,6 +36,7 @@ function App() {
                     <Route path="/investments" element={<Investments />} />
                     <Route path="/budget" element={<Budget />} />
                     <Route path="/reports" element={<Reports />} />
+                    <Route path="/decision-maker" element={<DecisionMaker />} />
                     <Route path="/settings" element={<Settings />} />
                 </Routes>
             </Layout>

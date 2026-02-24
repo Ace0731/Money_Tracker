@@ -2,7 +2,7 @@
 
 A powerful, **100% local** personal finance tracker for freelancers and individuals. Built with React, Tauri, and SQLite.
 
-![Version](https://img.shields.io/badge/version-1.6.0-blue)
+![Version](https://img.shields.io/badge/version-1.7.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-Private-red)
 
@@ -10,7 +10,7 @@ A powerful, **100% local** personal finance tracker for freelancers and individu
 
 ## ✨ Features
 
-### � Transaction Management
+### 💵 Transaction Management
 - Track income, expenses, and transfers
 - Multi-account support (Bank, Cash, Credit, Investment)
 - Multi-tag support for detailed categorization
@@ -100,10 +100,13 @@ npm run tauri dev
 
 ### Production Build
 ```bash
+# Generates both .msi and .exe installers
 npm run tauri build
 ```
 
-The installer will be created in `src-tauri/target/release/bundle/`.
+The installers will be created in `src-tauri/target/release/bundle/`. 
+- **EXE:** `bundle/nsis/*.exe` (Standard lightweight installer)
+- **MSI:** `bundle/msi/*.msi` (Windows Installer package)
 
 ---
 
@@ -135,7 +138,21 @@ money-tracker/
 
 ---
 
-## 🗄️ Database Schema
+## � Backup & Restore
+
+Your data is stored in `money_tracker.db` in the application data directory.
+
+### Simple Backup
+1. Close the Money Tracker app.
+2. Locate the database file (usually in the app's root or `%APPDATA%/com.moneytracker.app/`).
+3. Copy `money_tracker.db` to a safe location.
+
+### Restore
+1. Close the app.
+2. Replace the existing `money_tracker.db` with your backup.
+3. Restart the app.
+
+---
 
 | Table | Description |
 |-------|-------------|
@@ -154,7 +171,12 @@ money-tracker/
 
 ## 🔄 Version History
 
-### v1.6.0 (Current)
+### v1.7.0 (Current)
+- **Monthly Decision Maker**: Automated financial engine to calculate monthly budgets and bank transfers based on custom logic.
+- **Smart Data Sync**: Automatic pre-filling of salary, freelance, and expenses from transactions and bank accounts.
+- **Execution Guide**: Clear bank-to-bank transfer instructions to maintain sacred buffers and investment targets.
+
+### v1.6.0
 - **Interactive PDF Notifications**: Directly open generated Invoice/Quotation files from the application.
 - **Dynamic Balance Tracking**: Real-time calculation of account balances based on transaction history.
 - **Enhanced PDF Template**: Refined table layouts and hidden fields for cleaner professional looks.

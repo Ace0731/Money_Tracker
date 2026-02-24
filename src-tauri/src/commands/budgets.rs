@@ -393,32 +393,43 @@ pub fn get_budget_summary(db: State<DbConnection>, month: String) -> Result<Budg
     })
 }
 
-fn calculate_budget_period(month: &str, _salary_date: i32) -> (String, String) {
+fn calculate_budget_period(month: &str, salary_date: i32) -> (String, String) {
     // Month format: "YYYY-MM"
     let parts: Vec<&str> = month.split('-').collect();
     let year: i32 = parts[0].parse().unwrap_or(2024);
     let month_num: u32 = parts[1].parse().unwrap_or(1);
     
-    // Start: 1st of this month
-    let start_date = format!("{:04}-{:02}-01", year, month_num);
-    
-    // End: last day of this month
-    let last_day = match month_num {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            // Leap year check
-            if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
-                29
-            } else {
-                28
-            }
-        },
-        _ => 31,
+    // Default to 1st of month if invalid salary_date
+    let day = if salary_date < 1 { 1 } else { salary_date as u32 };
+
+    // Start Date: YYYY-MM-DD
+    // If the month has fewer days than salary_date, use the last day
+    let start_date_obj = match chrono::NaiveDate::from_ymd_opt(year, month_num, day) {
+        Some(d) => d,
+        None => {
+            // Find last day of month
+            let next_month = if month_num == 12 { 1 } else { month_num + 1 };
+            let next_year = if month_num == 12 { year + 1 } else { year };
+            chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap().pred_opt().unwrap()
+        }
     };
-    let end_date = format!("{:04}-{:02}-{:02}", year, month_num, last_day);
+
+    // End Date: Start Date + 1 Month - 1 Day
+    let next_month_num = if month_num == 12 { 1 } else { month_num + 1 };
+    let next_month_year = if month_num == 12 { year + 1 } else { year };
     
-    (start_date, end_date)
+    let next_cycle_start = match chrono::NaiveDate::from_ymd_opt(next_month_year, next_month_num, day) {
+        Some(d) => d,
+        None => {
+            let n_next_month = if next_month_num == 12 { 1 } else { next_month_num + 1 };
+            let n_next_year = if next_month_num == 12 { next_month_year + 1 } else { next_month_year };
+            chrono::NaiveDate::from_ymd_opt(n_next_year, n_next_month, 1).unwrap().pred_opt().unwrap()
+        }
+    };
+    
+    let end_date_obj = next_cycle_start.pred_opt().unwrap();
+
+    (start_date_obj.format("%Y-%m-%d").to_string(), end_date_obj.format("%Y-%m-%d").to_string())
 }
 
 // ============ BUDGET REPORTS ============

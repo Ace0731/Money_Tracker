@@ -14,6 +14,7 @@ const navigationGroups = [
         items: [
             { name: 'Transactions', path: '/transactions', icon: '💳' },
             { name: 'Accounts', path: '/accounts', icon: '🏦' },
+            { name: 'Decision Maker', path: '/decision-maker', icon: '🔥' },
             { name: 'Budget', path: '/budget', icon: '🎯' },
             { name: 'Categories', path: '/categories', icon: '📁' },
         ]
@@ -89,7 +90,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 <div className="p-4 border-t border-slate-700">
                     <div className="text-xs text-slate-500 text-center">
-                        v1.5.0 • Local Only
+                        v1.7.0 • Local Only
                     </div>
                 </div>
             </div>
