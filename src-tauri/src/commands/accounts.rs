@@ -91,3 +91,41 @@ pub fn update_account(
     
     Ok(())
 }
+
+#[tauri::command]
+pub fn delete_account(
+    db: State<DbConnection>,
+    id: i64,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    // Safety Check: Check if any transactions are linked to this account
+    let tx_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM transactions WHERE from_account_id = ?1 OR to_account_id = ?1",
+        rusqlite::params![id],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    if tx_count > 0 {
+        return Err(format!("Cannot delete account. There are {} transactions linked to it.", tx_count));
+    }
+    
+    // Also check if any investments are linked to this account
+    let inv_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM investments WHERE account_id = ?1",
+        rusqlite::params![id],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    if inv_count > 0 {
+        return Err(format!("Cannot delete account. There are {} investments linked to it.", inv_count));
+    }
+    
+    conn.execute(
+        "DELETE FROM accounts WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}

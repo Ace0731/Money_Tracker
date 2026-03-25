@@ -269,8 +269,44 @@ export default function Reports() {
                         <Bar dataKey="income" fill="#10b981" name="Income" />
                         <Bar dataKey="expense" fill="#ef4444" name="Expense" />
                         <Bar dataKey="investment" fill="#f59e0b" name="Investment" />
+                        <Bar dataKey="net" fill="#3b82f6" name="Savings" />
                     </BarChart>
                 </ResponsiveContainer>
+            </div>
+
+            {/* Monthly Breakdown */}
+            <div className={darkTheme.card + " p-6 mb-6"}>
+                <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">Monthly Breakdown</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-slate-700">
+                                <th className="text-left py-2 px-3 text-slate-400">Month</th>
+                                <th className="text-right py-2 px-3 text-slate-400">Income</th>
+                                <th className="text-right py-2 px-3 text-slate-400">Expenses</th>
+                                <th className="text-right py-2 px-3 text-slate-400">Investments</th>
+                                <th className="text-right py-2 px-3 text-slate-400">Savings</th>
+                                <th className="text-right py-2 px-3 text-slate-400">Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {monthlySummary.map(m => {
+                                const mIncome = m.income || 0;
+                                const rate = mIncome > 0 ? (m.net / mIncome) * 100 : 0;
+                                return (
+                                <tr key={m.month} className="border-b border-slate-800 hover:bg-slate-800/50">
+                                    <td className="py-2 px-3 text-slate-300">{new Date(m.month + '-01').toLocaleString('default', { month: 'short', year: 'numeric' })}</td>
+                                    <td className="text-right py-2 px-3 text-green-400">{formatCurrency(m.income)}</td>
+                                    <td className="text-right py-2 px-3 text-red-400">{formatCurrency(m.expense)}</td>
+                                    <td className="text-right py-2 px-3 text-amber-400">{formatCurrency(m.investment)}</td>
+                                    <td className={`text-right py-2 px-3 ${m.net >= 0 ? 'text-blue-400' : 'text-red-400'}`}>{formatCurrency(m.net)}</td>
+                                    <td className={`text-right py-2 px-3 ${rate >= 0 ? 'text-green-400' : 'text-red-400'}`}>{rate.toFixed(1)}%</td>
+                                </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Category Breakdown with Selector */}

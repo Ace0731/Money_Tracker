@@ -3,6 +3,7 @@ import { useDatabase } from '../hooks/useDatabase';
 import type { Account } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
+import Swal from 'sweetalert2';
 
 export default function Accounts() {
     const { execute, loading } = useDatabase();
@@ -47,6 +48,41 @@ export default function Accounts() {
     const handleEdit = (account: Account) => {
         setFormData(account);
         setShowForm(true);
+    };
+
+    const handleDelete = async () => {
+        if (!formData.id) return;
+        
+        const result = await Swal.fire({
+            title: 'Delete Account?',
+            text: 'This will permanently delete the account if it has no transactions.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#3b82f6',
+            confirmButtonText: 'Yes, delete it',
+            background: '#0f172a',
+            color: '#f1f5f9'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await execute('delete_account', { id: formData.id });
+                Swal.fire({ title: 'Deleted!', icon: 'success', background: '#0f172a', color: '#f1f5f9', timer: 1500, showConfirmButton: false });
+                setShowForm(false);
+                loadAccounts();
+            } catch (error: any) {
+                // The error string might be passed from rust, or it might be in an Error object.
+                const errMsg = typeof error === 'string' ? error : error.message || 'Failed to delete account';
+                Swal.fire({ 
+                    title: 'Cannot Delete', 
+                    text: errMsg, 
+                    icon: 'error', 
+                    background: '#0f172a', 
+                    color: '#f1f5f9' 
+                });
+            }
+        }
     };
 
     return (
@@ -127,6 +163,7 @@ export default function Accounts() {
                                     <option value="bank">Bank</option>
                                     <option value="cash">Cash</option>
                                     <option value="investment">Investment</option>
+                                    <option value="bucket">Bucket</option>
                                 </select>
                             </div>
 
@@ -154,20 +191,33 @@ export default function Accounts() {
                                 />
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowForm(false)}
-                                    className={darkTheme.btnCancel}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className={darkTheme.btnPrimary}
-                                >
-                                    {formData.id ? 'Update' : 'Create'}
-                                </button>
+                            <div className="flex justify-between items-center pt-4">
+                                {formData.id ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleDelete}
+                                        className="text-red-500 hover:text-red-400 font-medium px-2 py-1 transition"
+                                    >
+                                        Delete
+                                    </button>
+                                ) : (
+                                    <div /> /* Empty div for flex spacing */
+                                )}
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowForm(false)}
+                                        className={darkTheme.btnCancel}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className={darkTheme.btnPrimary}
+                                    >
+                                        {formData.id ? 'Update' : 'Create'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

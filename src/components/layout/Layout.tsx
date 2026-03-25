@@ -14,8 +14,6 @@ const navigationGroups = [
         items: [
             { name: 'Transactions', path: '/transactions', icon: '💳' },
             { name: 'Accounts', path: '/accounts', icon: '🏦' },
-            { name: 'Decision Maker', path: '/decision-maker', icon: '🔥' },
-            { name: 'Budget', path: '/budget', icon: '🎯' },
             { name: 'Categories', path: '/categories', icon: '📁' },
         ]
     },
@@ -24,20 +22,12 @@ const navigationGroups = [
         items: [
             { name: 'Clients', path: '/clients', icon: '👥' },
             { name: 'Projects', path: '/projects', icon: '📋' },
-            { name: 'Quotations', path: '/quotations', icon: '📄' },
-            { name: 'Invoices', path: '/invoices', icon: '📝' },
         ]
     },
     {
         title: 'Growth',
         items: [
             { name: 'Investments', path: '/investments', icon: '💰' },
-        ]
-    },
-    {
-        title: 'System',
-        items: [
-            { name: 'Settings', path: '/settings', icon: '⚙️' },
         ]
     }
 ];
@@ -90,7 +80,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 <div className="p-4 border-t border-slate-700">
                     <div className="text-xs text-slate-500 text-center">
-                        v1.7.0 • Local Only
+                        v1.8.0 • Local Only
                     </div>
                 </div>
             </div>

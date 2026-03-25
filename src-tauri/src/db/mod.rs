@@ -318,6 +318,26 @@ pub fn initialize_database() -> Result<DbConnection> {
     let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN quantity REAL DEFAULT 1", []);
     let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN rate REAL", []);
 
+    // 26. Migration to allow 'bucket' type in accounts CHECK constraint
+    let _ = conn.execute_batch(
+        "PRAGMA foreign_keys=off;
+         BEGIN TRANSACTION;
+         CREATE TABLE IF NOT EXISTS accounts_temp (
+             id INTEGER PRIMARY KEY,
+             name TEXT NOT NULL,
+             type TEXT CHECK(type IN ('bank','cash','investment','bucket')) NOT NULL,
+             opening_balance REAL NOT NULL,
+             notes TEXT,
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+         );
+         INSERT OR IGNORE INTO accounts_temp (id, name, type, opening_balance, notes, created_at) 
+         SELECT id, name, type, opening_balance, notes, created_at FROM accounts;
+         DROP TABLE accounts;
+         ALTER TABLE accounts_temp RENAME TO accounts;
+         COMMIT;
+         PRAGMA foreign_keys=on;"
+    );
+
     Ok(DbConnection(Mutex::new(conn)))
 }
 

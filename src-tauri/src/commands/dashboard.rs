@@ -17,6 +17,7 @@ pub struct DashboardData {
     pub bank_balance: f64,
     pub cash_balance: f64,
     pub investment_balance: f64,
+    pub bucket_balance: f64,
     pub individual_accounts: Vec<AccountBalance>,
     pub current_month_income: f64,
     pub current_month_expense: f64,
@@ -31,6 +32,7 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
     let mut bank_balance = 0.0;
     let mut cash_balance = 0.0;
     let mut investment_balance = 0.0;
+    let mut bucket_balance = 0.0;
     let mut individual_accounts = Vec::new();
     
     // Get all accounts with their dynamic balances
@@ -70,6 +72,7 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
             "bank" => bank_balance += current_balance,
             "cash" => cash_balance += current_balance,
             "investment" => investment_balance += current_balance,
+            "bucket" => bucket_balance += current_balance,
             _ => {}
         }
     }
@@ -91,13 +94,14 @@ pub fn get_dashboard_data(db: State<DbConnection>) -> Result<DashboardData, Stri
         |row| row.get(0)
     ).unwrap_or(0.0);
     
-    let total_balance = bank_balance + cash_balance + investment_balance;
+    let total_balance = bank_balance + cash_balance + investment_balance + bucket_balance;
     
     Ok(DashboardData {
         total_balance,
         bank_balance,
         cash_balance,
         investment_balance,
+        bucket_balance,
         individual_accounts,
         current_month_income,
         current_month_expense,

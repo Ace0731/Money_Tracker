@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT CHECK(type IN ('bank','cash','investment')) NOT NULL,
+  type TEXT CHECK(type IN ('bank','cash','investment','bucket')) NOT NULL,
   opening_balance REAL NOT NULL,
   notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP

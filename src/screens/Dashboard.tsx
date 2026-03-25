@@ -17,6 +17,7 @@ interface DashboardData {
     bank_balance: number;
     cash_balance: number;
     investment_balance: number;
+    bucket_balance: number;
     individual_accounts: AccountBalance[];
     current_month_income: number;
     current_month_expense: number;
@@ -64,6 +65,7 @@ export default function Dashboard() {
             case 'bank': return '🏦';
             case 'cash': return '💵';
             case 'investment': return '📈';
+            case 'bucket': return '🎯';
             default: return '💰';
         }
     };
@@ -79,7 +81,7 @@ export default function Dashboard() {
             {/* Total Balance */}
             <div className="mb-6">
                 <div className="card p-8 text-center text-white bg-slate-800 rounded-xl overflow-hidden shadow-lg border border-slate-700">
-                    <div className="text-sm text-slate-400 mb-2">Total Balance</div>
+                    <div className="text-sm text-slate-400 mb-2">Total Net Worth</div>
                     <div className="text-5xl font-bold text-blue-400">
                         {formatCurrency(data.total_balance)}
                     </div>
@@ -87,7 +89,7 @@ export default function Dashboard() {
             </div>
 
             {/* Account Balances by Type */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="card p-6 border-l-4 border-blue-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
                     <div className="flex items-center justify-between">
                         <div>
@@ -121,6 +123,18 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="text-4xl">📈</div>
+                    </div>
+                </div>
+
+                <div className="card p-6 border-l-4 border-amber-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <div className="text-sm text-slate-400">Buckets</div>
+                            <div className="text-2xl font-bold text-slate-100 mt-2">
+                                {formatCurrency(data.bucket_balance)}
+                            </div>
+                        </div>
+                        <div className="text-4xl">🎯</div>
                     </div>
                 </div>
             </div>
