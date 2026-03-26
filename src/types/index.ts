@@ -20,7 +20,7 @@ export interface InvestmentLot {
 export interface Investment {
     id?: number;
     name: string;
-    investment_type: 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf';
+    investment_type: 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf' | 'pf';
     account_id: number;
 
     // Stocks/MF specific
@@ -78,6 +78,7 @@ export interface Category {
     kind: 'income' | 'expense' | 'transfer';
     notes?: string;
     is_investment: boolean;
+    include_in_budget?: boolean;
 }
 
 export interface Client {

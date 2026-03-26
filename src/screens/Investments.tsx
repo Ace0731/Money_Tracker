@@ -13,6 +13,7 @@ import {
     fetchNPSNAV,
     getDaysRemaining
 } from '../utils/investmentCalculations';
+import BenchmarkTab from '../components/investments/BenchmarkTab';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
@@ -21,8 +22,10 @@ export default function Investments() {
     const [summaries, setSummaries] = useState<InvestmentSummary[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [platformBalances, setPlatformBalances] = useState<PlatformBalance[]>([]);
+    const [viewMode, setViewMode] = useState<'portfolio' | 'benchmark'>('portfolio');
+    const [benchmarkReport, setBenchmarkReport] = useState<any>(null);
     const [showLotForm, setShowLotForm] = useState(false);
-    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf'>('all');
+    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf' | 'pf'>('all');
     const [timePeriod, setTimePeriod] = useState<'all' | 'today' | 'month' | 'year'>('all');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [showViewLots, setShowViewLots] = useState(false);
@@ -52,14 +55,16 @@ export default function Investments() {
             if (sync) {
                 await execute('sync_investment_prices');
             }
-            const [sumData, accData, platData] = await Promise.all([
+            const [sumData, accData, platData, benchReport] = await Promise.all([
                 execute<InvestmentSummary[]>('get_investments_summary'),
                 execute<Account[]>('get_accounts'),
                 execute<PlatformBalance[]>('get_investment_platform_summary'),
+                execute<any>('get_investment_benchmark_report')
             ]);
             setSummaries(sumData);
             setAccounts(accData.filter(a => a.account_type === 'investment'));
             setPlatformBalances(platData);
+            setBenchmarkReport(benchReport);
         } catch (error) {
             console.error('Failed to load investment data:', error);
         }
@@ -419,14 +424,37 @@ export default function Investments() {
                 </div>
             </div>
 
-            {/* Filter Bars */}
-            <div className="space-y-3 mb-6">
-                {/* Asset Type Filter */}
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    {(['all', 'stock', 'mf', 'fd', 'rd', 'nps', 'ppf'] as const).map(t => (
-                        <button
-                            key={t}
-                            onClick={() => setFilter(t)}
+            <div className="flex justify-center mb-8">
+                <div className="bg-slate-800 p-1 rounded-xl flex gap-1 border border-slate-700 w-fit box-shadow-xl shadow-lg">
+                    <button 
+                        onClick={() => setViewMode('portfolio')}
+                        className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all ${viewMode === 'portfolio' ? 'bg-blue-600 shadow-md text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                        Portfolio Manager
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('benchmark')}
+                        className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all ${viewMode === 'benchmark' ? 'bg-emerald-600 shadow-md text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                        Benchmark Tracking
+                    </button>
+                </div>
+            </div>
+
+            {viewMode === 'benchmark' && (
+                <BenchmarkTab report={benchmarkReport} refreshData={() => loadData(false)} />
+            )}
+
+            {viewMode === 'portfolio' && (
+                <>
+                {/* Filter Bars */}
+                <div className="space-y-3 mb-6">
+                    {/* Asset Type Filter */}
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                        {(['all', 'stock', 'mf', 'fd', 'rd', 'nps', 'ppf', 'pf'] as const).map(t => (
+                            <button
+                                key={t}
+                                onClick={() => setFilter(t)}
                             className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all border ${filter === t
                                 ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
                                 : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
@@ -544,9 +572,6 @@ export default function Investments() {
                                 </div>
                             </div>
                         ))}
-                        {platformBalances.length === 0 && (
-                            <div className="text-sm text-slate-500 italic">No investment accounts found. Add one in the Accounts screen.</div>
-                        )}
                     </div>
                 </section>
                 {/* Stocks & MFs Section */}
@@ -670,14 +695,14 @@ export default function Investments() {
                 )}
 
                 {/* NPS & PPF Retirement Section */}
-                {(filter === 'all' || filter === 'nps' || filter === 'ppf') && (
+                {(filter === 'all' || filter === 'nps' || filter === 'ppf' || filter === 'pf') && (
                     <section>
                         <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
-                            <span>🎯</span> Retirement (NPS & PPF)
+                            <span>🎯</span> Retirement (NPS, PPF, PF)
                         </h2>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {filteredSummaries
-                                .filter(s => ['nps', 'ppf'].includes(s.investment.investment_type))
+                                .filter(s => ['nps', 'ppf', 'pf'].includes(s.investment.investment_type))
                                 .map((s) => {
                                     // Calculate NPS value if NAV available
                                     const npsValue = s.investment.investment_type === 'nps' && s.total_units && s.investment.current_price
@@ -685,7 +710,7 @@ export default function Investments() {
                                         : null;
 
                                     // Calculate PPF estimated balance
-                                    const ppfBalance = s.investment.investment_type === 'ppf' && s.investment.opening_date
+                                    const ppfBalance = (s.investment.investment_type === 'ppf' || s.investment.investment_type === 'pf') && s.investment.opening_date
                                         ? calculatePPFBalance(
                                             s.total_invested,
                                             Math.floor((new Date().getTime() - new Date(s.investment.opening_date).getTime()) / (1000 * 60 * 60 * 24 * 365)),
@@ -767,15 +792,17 @@ export default function Investments() {
                                         </div>
                                     );
                                 })}
-                            {filteredSummaries.filter(s => ['nps', 'ppf'].includes(s.investment.investment_type)).length === 0 && (
+                            {filteredSummaries.filter(s => ['nps', 'ppf', 'pf'].includes(s.investment.investment_type)).length === 0 && (
                                 <div className="text-slate-500 text-sm italic col-span-2">
-                                    No NPS/PPF investments. Add one using the "Add Investment" button.
+                                    No NPS/PPF/PF investments. Add one using the "Add Investment" button.
                                 </div>
                             )}
                         </div>
                     </section>
                 )}
             </div>
+            </>
+            )}
 
             {/* Investment Form Modal */}
             {
@@ -811,6 +838,7 @@ export default function Investments() {
                                             <option value="rd">Recurring Deposit</option>
                                             <option value="nps">NPS (National Pension)</option>
                                             <option value="ppf">PPF (Public Provident Fund)</option>
+                                            <option value="pf">PF (Provident Fund)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -940,29 +968,29 @@ export default function Investments() {
                                     </>
                                 )}
 
-                                {(formData.investment_type === 'nps' || formData.investment_type === 'ppf') && (
+                                {(formData.investment_type === 'nps' || formData.investment_type === 'ppf' || formData.investment_type === 'pf') && (
                                     <>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className={darkTheme.label}>
-                                                    {formData.investment_type === 'nps' ? 'Fund Manager' : 'Bank Name'}
+                                                    {formData.investment_type === 'nps' ? 'Fund Manager' : 'Employer / Bank'}
                                                 </label>
                                                 <input
                                                     type="text"
                                                     value={formData.bank_name || ''}
                                                     onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
                                                     className={darkTheme.input}
-                                                    placeholder={formData.investment_type === 'nps' ? 'e.g., SBI, HDFC' : 'e.g., SBI, Post Office'}
+                                                    placeholder={formData.investment_type === 'nps' ? 'e.g., SBI, HDFC' : 'e.g., TCS, Post Office'}
                                                 />
                                             </div>
                                             <div>
                                                 <label className={darkTheme.label}>Interest Rate (%)</label>
                                                 <input
                                                     type="number" step="0.01"
-                                                    value={formData.interest_rate || (formData.investment_type === 'ppf' ? 7.1 : '')}
+                                                    value={formData.interest_rate || ((formData.investment_type === 'ppf' || formData.investment_type === 'pf') ? 7.1 : '')}
                                                     onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
                                                     className={darkTheme.input}
-                                                    placeholder={formData.investment_type === 'ppf' ? '7.1' : '---'}
+                                                    placeholder={(formData.investment_type === 'ppf' || formData.investment_type === 'pf') ? '7.1' : '---'}
                                                 />
                                             </div>
                                         </div>

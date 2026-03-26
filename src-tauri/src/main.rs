@@ -55,6 +55,16 @@ fn main() {
             delete_investment_lot,
             get_live_market_price,
             get_project_payments,
+            get_investment_benchmark,
+            set_investment_benchmark,
+            get_investment_benchmark_report,
+            // Budget & Scheduled Transactions
+            get_scheduled_transactions,
+            create_scheduled_transaction,
+            update_scheduled_transaction,
+            delete_scheduled_transaction,
+            process_pending_schedules,
+            get_monthly_budget,
             // Company Settings commands
             save_pdf,
             open_file_folder,

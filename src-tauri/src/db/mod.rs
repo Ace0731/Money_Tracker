@@ -149,6 +149,9 @@ pub fn initialize_database() -> Result<DbConnection> {
         [],
     );
     
+    // 11. Add include_in_budget to categories
+    let _ = conn.execute("ALTER TABLE categories ADD COLUMN include_in_budget INTEGER DEFAULT 1", []);
+    
     let _ = conn.execute(
         "CREATE TABLE IF NOT EXISTS budgets (
             id INTEGER PRIMARY KEY,
@@ -334,6 +337,83 @@ pub fn initialize_database() -> Result<DbConnection> {
          SELECT id, name, type, opening_balance, notes, created_at FROM accounts;
          DROP TABLE accounts;
          ALTER TABLE accounts_temp RENAME TO accounts;
+         COMMIT;
+         PRAGMA foreign_keys=on;"
+    );
+
+    // 28. Create scheduled_transactions table
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS scheduled_transactions (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            type TEXT CHECK(type IN ('sip', 'subscription', 'transfer', 'income')) NOT NULL,
+            frequency TEXT CHECK(frequency IN ('daily', 'weekly', 'monthly', 'yearly')) NOT NULL,
+            frequency_interval INTEGER DEFAULT 1,
+            day_of_month INTEGER,
+            day_of_week INTEGER,
+            next_run_date DATE NOT NULL,
+            from_account_id INTEGER,
+            to_account_id INTEGER,
+            category_id INTEGER,
+            investment_id INTEGER,
+            is_active INTEGER DEFAULT 1,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (from_account_id) REFERENCES accounts(id),
+            FOREIGN KEY (to_account_id) REFERENCES accounts(id),
+            FOREIGN KEY (category_id) REFERENCES categories(id),
+            FOREIGN KEY (investment_id) REFERENCES investments(id)
+        )",
+        [],
+    );
+
+    // 29. Create Investment Benchmarks table
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS investment_benchmarks (
+            id INTEGER PRIMARY KEY,
+            target_amount REAL NOT NULL,
+            start_date DATE NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+
+    // 30. Migration to allow 'nps', 'ppf', 'pf' types in investments CHECK constraint (Stripping the restriction)
+    let _ = conn.execute_batch(
+        "PRAGMA foreign_keys=off;
+         BEGIN TRANSACTION;
+         CREATE TABLE IF NOT EXISTS investments_temp (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            account_id INTEGER NOT NULL,
+            units REAL,
+            avg_buy_price REAL,
+            current_price REAL,
+            principal_amount REAL,
+            interest_rate REAL,
+            maturity_date DATE,
+            maturity_amount REAL,
+            monthly_deposit REAL,
+            notes TEXT,
+            provider_symbol TEXT,
+            last_updated_at DATETIME,
+            principal_charges REAL DEFAULT 0.0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            retirement_age INTEGER DEFAULT 60,
+            current_age INTEGER,
+            category_id INTEGER REFERENCES categories(id),
+            tenure_months INTEGER,
+            opening_date DATE,
+            compounding TEXT DEFAULT 'quarterly',
+            bank_name TEXT,
+            FOREIGN KEY (account_id) REFERENCES accounts(id)
+         );
+         INSERT OR IGNORE INTO investments_temp (id, name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, last_updated_at, principal_charges, created_at, retirement_age, current_age, category_id, tenure_months, opening_date, compounding, bank_name) 
+         SELECT id, name, type, account_id, units, avg_buy_price, current_price, principal_amount, interest_rate, maturity_date, maturity_amount, monthly_deposit, notes, provider_symbol, last_updated_at, principal_charges, created_at, retirement_age, current_age, category_id, tenure_months, opening_date, compounding, bank_name FROM investments;
+         DROP TABLE investments;
+         ALTER TABLE investments_temp RENAME TO investments;
          COMMIT;
          PRAGMA foreign_keys=on;"
     );

@@ -7,6 +7,7 @@ const navigationGroups = [
         items: [
             { name: 'Dashboard', path: '/dashboard', icon: '📊' },
             { name: 'Reports', path: '/reports', icon: '📈' },
+            { name: 'Budget & Subs', path: '/budget', icon: '📅' },
         ]
     },
     {
@@ -50,26 +51,26 @@ export default function Layout({ children }: LayoutProps) {
                     <p className="text-sm text-slate-400 mt-1">Track every rupee</p>
                 </div>
 
-                <nav className="flex-1 p-4 overflow-y-auto space-y-6">
+                <nav className="flex-1 p-4 overflow-y-auto space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     {navigationGroups.map((group) => (
                         <div key={group.title}>
-                            <h3 className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+                            <h3 className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
                                 {group.title}
                             </h3>
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {group.items.map((item) => {
                                     const isActive = location.pathname === item.path;
                                     return (
                                         <Link
                                             key={item.name}
                                             to={item.path}
-                                            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${isActive
+                                            className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${isActive
                                                 ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20'
                                                 : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'
                                                 }`}
                                         >
-                                            <span className="text-lg">{item.icon}</span>
-                                            <span className="font-medium text-sm">{item.name}</span>
+                                            <span className="text-xl">{item.icon}</span>
+                                            <span className="font-semibold text-base tracking-wide">{item.name}</span>
                                         </Link>
                                     );
                                 })}

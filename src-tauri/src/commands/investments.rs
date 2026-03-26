@@ -531,3 +531,156 @@ pub async fn get_live_market_price(symbol: String, inv_type: String) -> Result<f
 
     Err("Could not fetch price".to_string())
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InvestmentBenchmark {
+    pub id: Option<i64>,
+    pub target_amount: f64,
+    pub start_date: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BenchmarkMonthReport {
+    pub month: String, // format "YYYY-MM"
+    pub label: String, // e.g., "Nov 2025"
+    pub target: f64,
+    pub actual: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InvestmentBenchmarkReport {
+    pub benchmark: Option<InvestmentBenchmark>,
+    pub monthly_data: Vec<BenchmarkMonthReport>,
+    pub total_target: f64,
+    pub total_actual: f64,
+    pub total_gap: f64, 
+}
+
+#[tauri::command]
+pub fn get_investment_benchmark(db: State<DbConnection>) -> Result<Option<InvestmentBenchmark>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn.prepare("SELECT id, target_amount, start_date FROM investment_benchmarks ORDER BY id DESC LIMIT 1")
+        .map_err(|e| e.to_string())?;
+        
+    let iter = stmt.query_map([], |r| {
+        Ok(InvestmentBenchmark {
+            id: Some(r.get(0)?),
+            target_amount: r.get(1)?,
+            start_date: r.get(2)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    
+    for item in iter {
+        if let Ok(b) = item {
+            return Ok(Some(b));
+        }
+    }
+    
+    Ok(None)
+}
+
+#[tauri::command]
+pub fn set_investment_benchmark(db: State<DbConnection>, target_amount: f64, start_date: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    // We only keep one active benchmark for simplicity, or just update the latest
+    conn.execute("DELETE FROM investment_benchmarks", []).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO investment_benchmarks (target_amount, start_date) VALUES (?1, ?2)",
+        params![target_amount, start_date]
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_investment_benchmark_report(db: State<DbConnection>) -> Result<InvestmentBenchmarkReport, String> {
+    // 1. Fetch benchmark
+    let benchmark_opt = get_investment_benchmark(db.clone())?;
+    
+    let benchmark = match benchmark_opt {
+        Some(b) => b,
+        None => return Ok(InvestmentBenchmarkReport {
+            benchmark: None,
+            monthly_data: Vec::new(),
+            total_target: 0.0,
+            total_actual: 0.0,
+            total_gap: 0.0,
+        })
+    };
+    
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    // 2. We need to generate months from start_date to "today"
+    use chrono::{NaiveDate, Local, Datelike, Months};
+    let start_d = NaiveDate::parse_from_str(&benchmark.start_date, "%Y-%m-%d")
+        .map_err(|_| "Invalid start_date in benchmark".to_string())?;
+        
+    let today = Local::now().date_naive();
+    
+    // If start_date is in the future and today is behind it, we'll still show up to the start_date's month
+    let mut current_d = start_d.with_day(1).unwrap_or(start_d);
+    let end_d = today.with_day(1).unwrap_or(today);
+    
+    // We want to generate months.
+    let mut target_months = Vec::new();
+    while current_d <= end_d || (current_d.year() == end_d.year() && current_d.month() == end_d.month()) {
+        let label = current_d.format("%b %Y").to_string(); // e.g. "Nov 2025"
+        let str_key = current_d.format("%Y-%m").to_string(); // e.g. "2025-11"
+        target_months.push((str_key, label));
+        current_d = current_d.checked_add_months(Months::new(1)).unwrap_or(current_d);
+        if target_months.len() > 120 { break; } // safety fallback
+    }
+    
+    // 3. Query group-by amounts from actual investment lots
+    let mut stmt = conn.prepare("
+        SELECT strftime('%Y-%m', il.date) as mth, SUM(
+            CASE WHEN il.lot_type = 'sell' THEN -(il.quantity * il.price_per_unit) ELSE (il.quantity * il.price_per_unit + il.charges) END
+        )
+        FROM investment_lots il
+        JOIN investments i ON il.investment_id = i.id
+        WHERE strftime('%Y-%m', il.date) >= ?1 AND i.type != 'pf'
+        GROUP BY mth
+    ").map_err(|e| e.to_string())?;
+    
+    let start_mth_str = start_d.format("%Y-%m").to_string();
+    let actuals_iter = stmt.query_map(params![start_mth_str], |r| {
+        let mth: String = r.get(0)?;
+        let sum: f64 = r.get(1)?;
+        Ok((mth, sum))
+    }).map_err(|e| e.to_string())?;
+    
+    let mut actuals_map = std::collections::HashMap::new();
+    for item in actuals_iter {
+        if let Ok((m, val)) = item {
+            actuals_map.insert(m, val);
+        }
+    }
+    
+    let mut monthly_data = Vec::new();
+    let mut total_target = 0.0;
+    let mut total_actual = 0.0;
+    
+    for (mth_key, label) in target_months {
+        let actual = actuals_map.get(&mth_key).copied().unwrap_or(0.0);
+        
+        monthly_data.push(BenchmarkMonthReport {
+            month: mth_key,
+            label,
+            target: benchmark.target_amount,
+            actual,
+        });
+        
+        total_target += benchmark.target_amount;
+        total_actual += actual;
+    }
+    
+    Ok(InvestmentBenchmarkReport {
+        benchmark: Some(benchmark),
+        monthly_data,
+        total_target,
+        total_actual,
+        total_gap: total_actual - total_target,
+    })
+}

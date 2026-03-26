@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS investments (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT CHECK(type IN ('stock', 'mf', 'fd', 'rd')) NOT NULL,
+  type TEXT NOT NULL,
   account_id INTEGER NOT NULL,
   
   -- Stocks/MF specific
@@ -127,3 +127,35 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_client ON transactions(client_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_project ON transactions(project_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_tags_tag ON transaction_tags(tag_id);
+
+-- SCHEDULED TRANSACTIONS (RECURRING SIPS & SUBS)
+CREATE TABLE IF NOT EXISTS scheduled_transactions (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount REAL NOT NULL,
+  type TEXT CHECK(type IN ('sip', 'subscription', 'transfer', 'income')) NOT NULL,
+  frequency TEXT CHECK(frequency IN ('daily', 'weekly', 'monthly', 'yearly')) NOT NULL,
+  frequency_interval INTEGER DEFAULT 1,
+  day_of_month INTEGER,
+  day_of_week INTEGER,
+  next_run_date DATE NOT NULL,
+  from_account_id INTEGER,
+  to_account_id INTEGER,
+  category_id INTEGER,
+  investment_id INTEGER,
+  is_active INTEGER DEFAULT 1,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (from_account_id) REFERENCES accounts(id),
+  FOREIGN KEY (to_account_id) REFERENCES accounts(id),
+  FOREIGN KEY (category_id) REFERENCES categories(id),
+  FOREIGN KEY (investment_id) REFERENCES investments(id)
+);
+
+-- INVESTMENT BENCHMARKS
+CREATE TABLE IF NOT EXISTS investment_benchmarks (
+  id INTEGER PRIMARY KEY,
+  target_amount REAL NOT NULL,
+  start_date DATE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
