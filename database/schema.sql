@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   name TEXT NOT NULL,
   type TEXT CHECK(type IN ('bank','cash','investment','bucket')) NOT NULL,
   opening_balance REAL NOT NULL,
+  parent_id INTEGER REFERENCES accounts(id),
+  bucket_role TEXT DEFAULT 'none',
   notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

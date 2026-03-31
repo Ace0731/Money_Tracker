@@ -321,25 +321,7 @@ pub fn initialize_database() -> Result<DbConnection> {
     let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN quantity REAL DEFAULT 1", []);
     let _ = conn.execute("ALTER TABLE invoice_items ADD COLUMN rate REAL", []);
 
-    // 26. Migration to allow 'bucket' type in accounts CHECK constraint
-    let _ = conn.execute_batch(
-        "PRAGMA foreign_keys=off;
-         BEGIN TRANSACTION;
-         CREATE TABLE IF NOT EXISTS accounts_temp (
-             id INTEGER PRIMARY KEY,
-             name TEXT NOT NULL,
-             type TEXT CHECK(type IN ('bank','cash','investment','bucket')) NOT NULL,
-             opening_balance REAL NOT NULL,
-             notes TEXT,
-             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-         );
-         INSERT OR IGNORE INTO accounts_temp (id, name, type, opening_balance, notes, created_at) 
-         SELECT id, name, type, opening_balance, notes, created_at FROM accounts;
-         DROP TABLE accounts;
-         ALTER TABLE accounts_temp RENAME TO accounts;
-         COMMIT;
-         PRAGMA foreign_keys=on;"
-    );
+    // (Step 26 was removed because it was destructive to new buckets)
 
     // 28. Create scheduled_transactions table
     let _ = conn.execute(
@@ -417,6 +399,85 @@ pub fn initialize_database() -> Result<DbConnection> {
          COMMIT;
          PRAGMA foreign_keys=on;"
     );
+
+    // 31. Add parent_id and bucket_role to accounts (Consolidated & Safe)
+    let _ = conn.execute("ALTER TABLE accounts ADD COLUMN parent_id INTEGER REFERENCES accounts(id)", []);
+    let _ = conn.execute("ALTER TABLE accounts ADD COLUMN bucket_role TEXT DEFAULT 'none'", []);
+    
+    // We need a schema swap to update the CHECK constraint for 'bucket' type without losing new columns
+    let _ = conn.execute_batch(
+        "PRAGMA foreign_keys=off;
+         BEGIN TRANSACTION;
+         CREATE TABLE IF NOT EXISTS accounts_v2 (
+             id INTEGER PRIMARY KEY,
+             name TEXT NOT NULL,
+             type TEXT CHECK(type IN ('bank','cash','investment','bucket')) NOT NULL,
+             opening_balance REAL NOT NULL,
+             parent_id INTEGER REFERENCES accounts(id),
+             bucket_role TEXT DEFAULT 'none',
+             notes TEXT,
+             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+         );
+         -- Copy everything including the new columns we just ensured exist
+         INSERT OR IGNORE INTO accounts_v2 (id, name, type, opening_balance, parent_id, bucket_role, notes, created_at) 
+         SELECT id, name, type, opening_balance, parent_id, bucket_role, notes, created_at FROM accounts;
+         
+         DROP TABLE accounts;
+         ALTER TABLE accounts_v2 RENAME TO accounts;
+         COMMIT;
+         PRAGMA foreign_keys=on;"
+    );
+
+    // 32. Create Goals table
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS goals (
+            id INTEGER PRIMARY KEY,
+            bucket_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            target_amount REAL NOT NULL,
+            current_amount REAL DEFAULT 0.0,
+            status TEXT DEFAULT 'active',
+            deadline DATE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (bucket_id) REFERENCES accounts(id)
+        )",
+        [],
+    );
+
+    // 33. Create Bucket Allocation Settings
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS bucket_allocation_settings (
+            id INTEGER PRIMARY KEY,
+            emergency_target REAL NOT NULL DEFAULT 100000.0,
+            trigger_category_id INTEGER,
+            is_enabled INTEGER DEFAULT 1,
+            FOREIGN KEY (trigger_category_id) REFERENCES categories(id)
+        )",
+        [],
+    );
+    let _ = conn.execute("INSERT OR IGNORE INTO bucket_allocation_settings (id, emergency_target) VALUES (1, 100000.0)", []);
+
+    // 34. Add goal_id to transactions
+    let _ = conn.execute("ALTER TABLE transactions ADD COLUMN goal_id INTEGER REFERENCES goals(id)", []);
+    // 35. Create Allocation Rules table
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS allocation_rules (
+            id INTEGER PRIMARY KEY,
+            tier INTEGER NOT NULL UNIQUE,
+            emergency_pc REAL NOT NULL,
+            asset_pc REAL NOT NULL,
+            travel_pc REAL NOT NULL
+        )",
+        [],
+    );
+
+    // Seed default allocation rules if empty
+    let rules_count: i64 = conn.query_row("SELECT COUNT(*) FROM allocation_rules", [], |r| r.get(0)).unwrap_or(0);
+    if rules_count == 0 {
+        let _ = conn.execute("INSERT INTO allocation_rules (tier, emergency_pc, asset_pc, travel_pc) VALUES (1, 0.7, 0.3, 0.0)", []);
+        let _ = conn.execute("INSERT INTO allocation_rules (tier, emergency_pc, asset_pc, travel_pc) VALUES (2, 0.4, 0.4, 0.2)", []);
+        let _ = conn.execute("INSERT INTO allocation_rules (tier, emergency_pc, asset_pc, travel_pc) VALUES (3, 0.2, 0.5, 0.3)", []);
+    }
 
     Ok(DbConnection(Mutex::new(conn)))
 }

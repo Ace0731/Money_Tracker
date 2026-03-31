@@ -34,6 +34,7 @@ fn main() {
             create_transaction,
             update_transaction,
             get_transaction_tags,
+            delete_transaction,
             get_monthly_summary,
             get_category_summary,
             get_client_summary,
@@ -65,6 +66,15 @@ fn main() {
             delete_scheduled_transaction,
             process_pending_schedules,
             get_monthly_budget,
+            // Goals & Allocation
+            get_goals,
+            create_goal,
+            update_goal,
+            delete_goal,
+            get_allocation_settings,
+            update_allocation_settings,
+            get_allocation_rules,
+            update_allocation_rule,
             // Company Settings commands
             save_pdf,
             open_file_folder,

@@ -8,6 +8,7 @@ pub mod reports;
 pub mod dashboard;
 pub mod investments;
 pub mod budget;
+pub mod goals;
 pub mod utils;
 
 pub use accounts::*;
@@ -20,4 +21,5 @@ pub use reports::*;
 pub use dashboard::*;
 pub use investments::*;
 pub use budget::*;
+pub use goals::*;
 pub use utils::*;

@@ -30,6 +30,7 @@ export default function Transactions() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [tags, setTags] = useState<Tag[]>([]);
     const [investments, setInvestments] = useState<Investment[]>([]);
+    const [goals, setGoals] = useState<any[]>([]);
 
     // Form state
     const [formData, setFormData] = useState<Transaction>({
@@ -42,6 +43,7 @@ export default function Transactions() {
         client_id: undefined,
         project_id: undefined,
         investment_id: undefined,
+        goal_id: undefined,
         notes: '',
     });
     const [selectedTags, setSelectedTags] = useState<number[]>([]);
@@ -105,6 +107,9 @@ export default function Transactions() {
             setProjects(projectsData);
             setTags(tagsData);
             setInvestments(investmentsData);
+            
+            const goalsData = await execute<any[]>('get_goals');
+            setGoals(goalsData);
         } catch (error) {
             console.error('Failed to load reference data:', error);
         }
@@ -134,6 +139,32 @@ export default function Transactions() {
         }
     };
 
+    const handleDelete = async () => {
+        if (!formData.id) return;
+        
+        const result = await Swal.fire({
+            title: 'Delete Transaction?',
+            text: 'This will revert its effect on account balances.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            background: '#1e293b',
+            color: '#f1f5f9'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await execute('delete_transaction', { id: formData.id });
+                await loadTransactions();
+                await loadBalances();
+                setShowForm(false);
+                resetForm();
+            } catch (error) {
+                console.error('Failed to delete transaction:', error);
+            }
+        }
+    };
+
     const handleEdit = async (transaction: TransactionWithDetails) => {
         const tagIds = await execute<number[]>('get_transaction_tags', { transactionId: transaction.id });
 
@@ -148,6 +179,7 @@ export default function Transactions() {
             client_id: transaction.client_id,
             project_id: transaction.project_id,
             investment_id: transaction.investment_id,
+            goal_id: transaction.goal_id,
             notes: transaction.notes,
         });
         setSelectedTags(tagIds);
@@ -165,6 +197,7 @@ export default function Transactions() {
             client_id: undefined,
             project_id: undefined,
             investment_id: undefined,
+            goal_id: undefined,
             notes: '',
         });
         setSelectedTags([]);
@@ -370,6 +403,7 @@ export default function Transactions() {
                                     {transaction.client_name && <div className="text-blue-400">{transaction.client_name}</div>}
                                     {transaction.project_name && <div className="text-sm text-slate-500">{transaction.project_name}</div>}
                                     {transaction.investment_name && <div className="text-xs text-purple-400">🔗 {transaction.investment_name}</div>}
+                                    {transaction.goal_name && <div className="text-xs text-blue-400">🎯 {transaction.goal_name}</div>}
                                 </td>
                                 <td className={darkTheme.tableCell}>
                                     <div className="flex flex-wrap gap-1">
@@ -502,6 +536,28 @@ export default function Transactions() {
                                 </div>
                             )}
 
+                            {/* Goal Selection (only for buckets) */}
+                            {((formData.direction === 'expense' && accounts.find(a => a.id === formData.from_account_id)?.account_type === 'bucket') ||
+                              (formData.direction === 'transfer' && accounts.find(a => a.id === formData.to_account_id)?.account_type === 'bucket')) && (
+                                <div>
+                                    <label className={darkTheme.label}>Linked Goal (Optional)</label>
+                                    <select
+                                        value={formData.goal_id || ''}
+                                        onChange={(e) => setFormData({ ...formData, goal_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                        className={darkTheme.select}
+                                    >
+                                        <option value="">None</option>
+                                        {goals
+                                            .filter(g => g.status === 'active' && 
+                                                (g.bucket_id === formData.from_account_id || g.bucket_id === formData.to_account_id))
+                                            .map((goal) => (
+                                                <option key={goal.id} value={goal.id}>{goal.name}</option>
+                                            ))
+                                        }
+                                    </select>
+                                </div>
+                            )}
+
                             {/* Category */}
                             <div>
                                 <label className={darkTheme.label}>Category *</label>
@@ -608,13 +664,26 @@ export default function Transactions() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className={darkTheme.btnPrimary}>
-                                    {formData.id ? 'Update' : 'Create'}
-                                </button>
+                            <div className="flex justify-between items-center pt-4">
+                                <div>
+                                    {formData.id && (
+                                        <button 
+                                            type="button" 
+                                            onClick={handleDelete}
+                                            className="px-4 py-2 text-red-400 hover:text-red-300 font-bold transition-colors"
+                                        >
+                                            Delete Transaction
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>
+                                        Cancel
+                                    </button>
+                                    <button type="submit" className={darkTheme.btnPrimary}>
+                                        {formData.id ? 'Update' : 'Create'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

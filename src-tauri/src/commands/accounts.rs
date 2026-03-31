@@ -10,6 +10,8 @@ pub struct Account {
     pub account_type: String,
     pub opening_balance: f64,
     pub current_balance: Option<f64>,
+    pub parent_id: Option<i64>,
+    pub bucket_role: String,
     pub notes: Option<String>,
 }
 
@@ -20,10 +22,18 @@ pub fn get_accounts(db: State<DbConnection>) -> Result<Vec<Account>, String> {
     let mut stmt = conn
         .prepare("
             SELECT 
-                a.id, a.name, a.type, a.opening_balance, a.notes,
+                a.id, a.name, a.type, a.opening_balance, a.notes, a.parent_id, a.bucket_role,
                 a.opening_balance + 
-                COALESCE((SELECT SUM(amount) FROM transactions WHERE to_account_id = a.id), 0) -
-                COALESCE((SELECT SUM(amount) FROM transactions WHERE from_account_id = a.id), 0) as current_balance
+                COALESCE((
+                    SELECT SUM(amount) FROM transactions 
+                    WHERE to_account_id = a.id 
+                    OR to_account_id IN (SELECT id FROM accounts WHERE parent_id = a.id)
+                ), 0) -
+                COALESCE((
+                    SELECT SUM(amount) FROM transactions 
+                    WHERE from_account_id = a.id
+                    OR from_account_id IN (SELECT id FROM accounts WHERE parent_id = a.id)
+                ), 0) as current_balance
             FROM accounts a 
             ORDER BY a.name
         ")
@@ -36,8 +46,10 @@ pub fn get_accounts(db: State<DbConnection>) -> Result<Vec<Account>, String> {
                 name: row.get(1)?,
                 account_type: row.get(2)?,
                 opening_balance: row.get(3)?,
-                current_balance: Some(row.get(5)?),
                 notes: row.get(4)?,
+                parent_id: row.get(5)?,
+                bucket_role: row.get(6)?,
+                current_balance: Some(row.get(7)?),
             })
         })
         .map_err(|e| e.to_string())?
@@ -55,12 +67,14 @@ pub fn create_account(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO accounts (name, type, opening_balance, notes) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO accounts (name, type, opening_balance, notes, parent_id, bucket_role) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             account.name,
             account.account_type,
             account.opening_balance,
             account.notes,
+            account.parent_id,
+            account.bucket_role,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -78,12 +92,14 @@ pub fn update_account(
     let id = account.id.ok_or("Account ID is required")?;
     
     conn.execute(
-        "UPDATE accounts SET name = ?1, type = ?2, opening_balance = ?3, notes = ?4 WHERE id = ?5",
+        "UPDATE accounts SET name = ?1, type = ?2, opening_balance = ?3, notes = ?4, parent_id = ?5, bucket_role = ?6 WHERE id = ?7",
         params![
             account.name,
             account.account_type,
             account.opening_balance,
             account.notes,
+            account.parent_id,
+            account.bucket_role,
             id,
         ],
     )

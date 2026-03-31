@@ -12,21 +12,55 @@ interface AccountBalance {
     balance: number;
 }
 
+interface DashboardGoal {
+    id: number;
+    name: string;
+    bucket_name: string;
+    target_amount: number;
+    current_amount: number;
+    status: string;
+}
+
 interface DashboardData {
     total_balance: number;
     bank_balance: number;
     cash_balance: number;
     investment_balance: number;
-    bucket_balance: number;
     individual_accounts: AccountBalance[];
     current_month_income: number;
     current_month_expense: number;
     current_month_net: number;
+    active_goals_count: number;
+    completed_goals_count: number;
+    goals: DashboardGoal[];
     project_stats?: {
         total_expected: number;
         total_received: number;
         total_pending: number;
     };
+}
+
+function StatCard({ title, amount, icon, color }: { 
+    title: string, 
+    amount: number, 
+    icon: string, 
+    color: string
+}) {
+    return (
+        <div className={`card bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700 overflow-hidden`}>
+            <div className={`p-6 border-l-4 ${color}`}>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">{title}</div>
+                        <div className="text-2xl font-bold text-slate-100 mt-1">
+                            {formatCurrency(amount)}
+                        </div>
+                    </div>
+                    <div className="text-3xl">{icon}</div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export default function Dashboard() {
@@ -89,53 +123,68 @@ export default function Dashboard() {
             </div>
 
             {/* Account Balances by Type */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="card p-6 border-l-4 border-blue-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-sm text-slate-400">Bank Accounts</div>
-                            <div className="text-2xl font-bold text-slate-100 mt-2">
-                                {formatCurrency(data.bank_balance)}
-                            </div>
-                        </div>
-                        <div className="text-4xl">🏦</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                <StatCard 
+                    title="Bank Accounts" 
+                    amount={data.bank_balance} 
+                    icon="🏦" 
+                    color="border-blue-500" 
+                />
+                <StatCard 
+                    title="Cash" 
+                    amount={data.cash_balance} 
+                    icon="💵" 
+                    color="border-green-500" 
+                />
+                <StatCard 
+                    title="Investments" 
+                    amount={data.investment_balance} 
+                    icon="📈" 
+                    color="border-purple-500" 
+                />
+            </div>
+
+
+            {/* Financial Goals */}
+            <div className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-slate-100">Financial Goals</h2>
+                    <div className="text-xs text-slate-400 font-medium">
+                        {data.active_goals_count} Active • {data.completed_goals_count} Completed
                     </div>
                 </div>
-
-                <div className="card p-6 border-l-4 border-green-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-sm text-slate-400">Cash</div>
-                            <div className="text-2xl font-bold text-slate-100 mt-2">
-                                {formatCurrency(data.cash_balance)}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {data.goals && data.goals.map(goal => {
+                        const progress = Math.min(100, (goal.current_amount / goal.target_amount) * 100);
+                        return (
+                            <div key={goal.id} className="card p-5 bg-slate-800 rounded-xl shadow-lg border border-slate-700 relative overflow-hidden group">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <div className="text-sm font-bold text-slate-100 group-hover:text-blue-400 transition-colors">{goal.name}</div>
+                                        <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mt-0.5">{goal.bucket_name}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs font-bold text-slate-100">{Math.round(progress)}%</div>
+                                    </div>
+                                </div>
+                                <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden mb-3">
+                                    <div 
+                                        className="h-full bg-blue-500 transition-all duration-1000 ease-out" 
+                                        style={{ width: `${progress}%` }}
+                                    ></div>
+                                </div>
+                                <div className="flex justify-between items-center text-[11px]">
+                                    <span className="text-slate-400">{formatCurrency(goal.current_amount)}</span>
+                                    <span className="text-slate-500">Target: {formatCurrency(goal.target_amount)}</span>
+                                </div>
                             </div>
+                        );
+                    })}
+                    {(!data.goals || data.goals.length === 0) && (
+                        <div className="col-span-full py-8 bg-slate-800/30 rounded-xl border border-dashed border-slate-700 text-center text-slate-500 italic text-sm">
+                            No active goals tracked yet.
                         </div>
-                        <div className="text-4xl">💵</div>
-                    </div>
-                </div>
-
-                <div className="card p-6 border-l-4 border-purple-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-sm text-slate-400">Investments</div>
-                            <div className="text-2xl font-bold text-slate-100 mt-2">
-                                {formatCurrency(data.investment_balance)}
-                            </div>
-                        </div>
-                        <div className="text-4xl">📈</div>
-                    </div>
-                </div>
-
-                <div className="card p-6 border-l-4 border-amber-500 bg-slate-800 rounded-xl shadow-lg border-y border-r border-slate-700">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-sm text-slate-400">Buckets</div>
-                            <div className="text-2xl font-bold text-slate-100 mt-2">
-                                {formatCurrency(data.bucket_balance)}
-                            </div>
-                        </div>
-                        <div className="text-4xl">🎯</div>
-                    </div>
+                    )}
                 </div>
             </div>
 
@@ -144,7 +193,7 @@ export default function Dashboard() {
                 <div className="mb-6">
                     <h2 className="text-xl font-bold mb-4 text-slate-100">Individual Accounts</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {data.individual_accounts.map((account) => (
+                        {data.individual_accounts.filter(a => a.account_type !== 'bucket').map((account) => (
                             <div key={account.id} className="card p-4 bg-slate-800 rounded-xl shadow-lg border border-slate-700 hover:border-blue-500 transition-colors cursor-pointer" onClick={() => navigate('/transactions', { state: { accountId: account.id } })}>
                                 <div className="flex items-start justify-between">
                                     <div className="overflow-hidden">
@@ -161,6 +210,7 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
+
 
             {/* Project Finance Summary */}
             <div className="mb-6">

@@ -13,6 +13,8 @@ export default function Accounts() {
         name: '',
         account_type: 'bank',
         opening_balance: 0,
+        parent_id: undefined,
+        bucket_role: 'none',
         notes: '',
     });
 
@@ -39,7 +41,7 @@ export default function Accounts() {
             }
             await loadAccounts();
             setShowForm(false);
-            setFormData({ name: '', account_type: 'bank', opening_balance: 0, notes: '' });
+            setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', notes: '' });
         } catch (error) {
             console.error('Failed to save account:', error);
         }
@@ -91,7 +93,7 @@ export default function Accounts() {
                 <h1 className={darkTheme.title}>Accounts</h1>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', account_type: 'bank', opening_balance: 0, notes: '' });
+                        setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', notes: '' });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}
@@ -110,10 +112,24 @@ export default function Accounts() {
                         onClick={() => handleEdit(account)}
                     >
                         <div className="flex justify-between items-start mb-2">
-                            <h3 className="text-xl font-bold text-slate-100">{account.name}</h3>
-                            <span className={darkTheme.badgeNeutral + " capitalize"}>
-                                {account.account_type}
-                            </span>
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-100">{account.name}</h3>
+                                {account.parent_id && (
+                                    <p className="text-[10px] text-slate-500 font-medium">
+                                        Part of: {accounts.find(a => a.id === account.parent_id)?.name}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                                <span className={darkTheme.badgeNeutral + " capitalize"}>
+                                    {account.account_type}
+                                </span>
+                                {account.bucket_role !== 'none' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/30 uppercase font-bold tracking-wider">
+                                        {account.bucket_role}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         <p className="text-2xl font-bold text-blue-400">
                             {formatCurrency(account.current_balance ?? account.opening_balance)}
@@ -157,7 +173,7 @@ export default function Accounts() {
                                 <select
                                     required
                                     value={formData.account_type}
-                                    onChange={(e) => setFormData({ ...formData, account_type: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, account_type: e.target.value, bucket_role: e.target.value === 'bucket' ? formData.bucket_role : 'none' })}
                                     className={darkTheme.select}
                                 >
                                     <option value="bank">Bank</option>
@@ -166,6 +182,37 @@ export default function Accounts() {
                                     <option value="bucket">Bucket</option>
                                 </select>
                             </div>
+
+                            {formData.account_type === 'bucket' && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={darkTheme.label}>Parent Account</label>
+                                        <select
+                                            value={formData.parent_id || ''}
+                                            onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                            className={darkTheme.select}
+                                        >
+                                            <option value="">No Parent</option>
+                                            {accounts.filter(a => a.account_type !== 'bucket' && a.id !== formData.id).map(a => (
+                                                <option key={a.id} value={a.id}>{a.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className={darkTheme.label}>Bucket Role</label>
+                                        <select
+                                            value={formData.bucket_role}
+                                            onChange={(e) => setFormData({ ...formData, bucket_role: e.target.value as any })}
+                                            className={darkTheme.select}
+                                        >
+                                            <option value="none">Generic</option>
+                                            <option value="emergency">Emergency</option>
+                                            <option value="asset">Asset</option>
+                                            <option value="travel">Travel</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
 
                             <div>
                                 <label className={darkTheme.label}>Opening Balance *</label>

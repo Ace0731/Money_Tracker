@@ -15,6 +15,8 @@ export interface TransactionWithDetails {
     project_name?: string;
     investment_id?: number;
     investment_name?: string;
+    goal_id?: number;
+    goal_name?: string;
     notes?: string;
     tags: string[];
 }

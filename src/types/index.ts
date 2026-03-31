@@ -4,8 +4,35 @@ export interface Account {
     account_type: string;
     opening_balance: number;
     current_balance?: number;
+    parent_id?: number;
+    bucket_role?: 'emergency' | 'asset' | 'travel' | 'none';
     notes?: string;
 }
+
+export interface Goal {
+    id?: number;
+    bucket_id: number;
+    name: string;
+    target_amount: number;
+    current_amount: number;
+    status: 'active' | 'completed';
+    deadline?: string;
+}
+
+export interface AllocationSettings {
+    emergency_target: number;
+    trigger_category_id?: number;
+    is_enabled: boolean;
+}
+
+export interface AllocationRule {
+    id?: number;
+    tier: number;
+    emergency_pc: number;
+    asset_pc: number;
+    travel_pc: number;
+}
+
 
 export interface InvestmentLot {
     id?: number;
@@ -253,6 +280,7 @@ export interface Transaction {
     client_id?: number;
     project_id?: number;
     investment_id?: number;
+    goal_id?: number;
     // Details
     from_account_name?: string;
     to_account_name?: string;
@@ -260,6 +288,7 @@ export interface Transaction {
     client_name?: string;
     project_name?: string;
     investment_name?: string;
+    goal_name?: string;
     notes?: string;
     created_at?: string;
     tags?: string[];
