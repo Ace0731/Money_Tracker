@@ -9,8 +9,9 @@ pub struct Category {
     pub name: String,
     pub kind: String,
     pub notes: Option<String>,
-    pub is_investment: bool,
-    pub include_in_budget: bool,
+    pub is_investment: Option<bool>,
+    pub include_in_budget: Option<bool>,
+    pub include_in_income_breakdown: Option<bool>,
 }
 
 #[tauri::command]
@@ -18,7 +19,7 @@ pub fn get_categories(db: State<DbConnection>) -> Result<Vec<Category>, String> 
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, name, kind, notes, COALESCE(is_investment, 0), COALESCE(include_in_budget, 1) FROM categories ORDER BY kind, name")
+        .prepare("SELECT id, name, kind, notes, COALESCE(is_investment, 0), COALESCE(include_in_budget, 1), COALESCE(include_in_income_breakdown, 0) FROM categories ORDER BY kind, name")
         .map_err(|e| e.to_string())?;
     
     let categories = stmt
@@ -28,8 +29,9 @@ pub fn get_categories(db: State<DbConnection>) -> Result<Vec<Category>, String> 
                 name: row.get(1)?,
                 kind: row.get(2)?,
                 notes: row.get(3)?,
-                is_investment: row.get::<_, i32>(4)? == 1,
-                include_in_budget: row.get::<_, i32>(5)? == 1,
+                is_investment: Some(row.get::<_, i32>(4)? == 1),
+                include_in_budget: Some(row.get::<_, i32>(5)? == 1),
+                include_in_income_breakdown: Some(row.get::<_, i32>(6)? == 1),
             })
         })
         .map_err(|e| e.to_string())?
@@ -47,8 +49,15 @@ pub fn create_category(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO categories (name, kind, notes, is_investment, include_in_budget) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![category.name, category.kind, category.notes, category.is_investment as i32, category.include_in_budget as i32],
+        "INSERT INTO categories (name, kind, notes, is_investment, include_in_budget, include_in_income_breakdown) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            category.name, 
+            category.kind, 
+            category.notes, 
+            category.is_investment.unwrap_or(false) as i32, 
+            category.include_in_budget.unwrap_or(true) as i32,
+            category.include_in_income_breakdown.unwrap_or(false) as i32
+        ],
     )
     .map_err(|e| e.to_string())?;
     
@@ -65,8 +74,16 @@ pub fn update_category(
     let id = category.id.ok_or("Category ID is required")?;
     
     conn.execute(
-        "UPDATE categories SET name = ?1, kind = ?2, notes = ?3, is_investment = ?4, include_in_budget = ?5 WHERE id = ?6",
-        params![category.name, category.kind, category.notes, category.is_investment as i32, category.include_in_budget as i32, id],
+        "UPDATE categories SET name = ?1, kind = ?2, notes = ?3, is_investment = ?4, include_in_budget = ?5, include_in_income_breakdown = ?6 WHERE id = ?7",
+        params![
+            category.name, 
+            category.kind, 
+            category.notes, 
+            category.is_investment.unwrap_or(false) as i32, 
+            category.include_in_budget.unwrap_or(true) as i32,
+            category.include_in_income_breakdown.unwrap_or(false) as i32,
+            id
+        ],
     )
     .map_err(|e| e.to_string())?;
     

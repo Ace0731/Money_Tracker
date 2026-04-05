@@ -9,7 +9,7 @@ pub struct Project {
     pub name: String,
     pub client_id: Option<i64>,
     pub expected_amount: Option<f64>,
-    pub daily_rate: Option<f64>,
+    pub hourly_rate: Option<f64>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub notes: Option<String>,
@@ -42,8 +42,6 @@ pub struct TimeLog {
     pub date: String,
     pub hours: f64,
     pub task: Option<String>,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
     pub created_at: Option<String>,
 }
 
@@ -54,7 +52,7 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
     let mut stmt = conn
         .prepare("
             SELECT 
-                p.id, p.name, p.client_id, p.expected_amount, p.daily_rate, p.start_date, p.end_date, p.notes, p.completed, p.status,
+                p.id, p.name, p.client_id, p.expected_amount, p.hourly_rate, p.start_date, p.end_date, p.notes, p.completed, p.status,
                 p.srs_internal_link, p.srs_client_approved_link, p.srs_status, p.srs_approved_date,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'income') as received,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'expense') as spent,
@@ -71,7 +69,7 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
                 name: row.get(1)?,
                 client_id: row.get(2)?,
                 expected_amount: row.get(3)?,
-                daily_rate: row.get(4)?,
+                hourly_rate: row.get(4)?,
                 start_date: row.get(5)?,
                 end_date: row.get(6)?,
                 notes: row.get(7)?,
@@ -101,14 +99,14 @@ pub fn create_project(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO projects (name, client_id, expected_amount, daily_rate, start_date, end_date, notes, completed, status, 
+        "INSERT INTO projects (name, client_id, expected_amount, hourly_rate, start_date, end_date, notes, completed, status, 
          srs_internal_link, srs_client_approved_link, srs_status, srs_approved_date) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             project.name,
             project.client_id,
             project.expected_amount,
-            project.daily_rate.unwrap_or(0.0),
+            project.hourly_rate.unwrap_or(0.0),
             project.start_date,
             project.end_date,
             project.notes,
@@ -135,14 +133,14 @@ pub fn update_project(
     let id = project.id.ok_or("Project ID is required")?;
     
     conn.execute(
-        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, daily_rate = ?4, start_date = ?5, 
+        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, hourly_rate = ?4, start_date = ?5, 
          end_date = ?6, notes = ?7, completed = ?8, status = ?9, srs_internal_link = ?10, 
          srs_client_approved_link = ?11, srs_status = ?12, srs_approved_date = ?13 WHERE id = ?14",
         params![
             project.name,
             project.client_id,
             project.expected_amount,
-            project.daily_rate.unwrap_or(0.0),
+            project.hourly_rate.unwrap_or(0.0),
             project.start_date,
             project.end_date,
             project.notes,
@@ -163,7 +161,7 @@ pub fn update_project(
 #[tauri::command]
 pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<TimeLog>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id, project_id, date, hours, task, start_time, end_time, created_at FROM time_logs WHERE project_id = ?1 ORDER BY date DESC")
+    let mut stmt = conn.prepare("SELECT id, project_id, date, hours, task, created_at FROM time_logs WHERE project_id = ?1 ORDER BY date DESC")
         .map_err(|e| e.to_string())?;
     
     let logs = stmt.query_map([project_id], |row| {
@@ -173,9 +171,7 @@ pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<Tim
             date: row.get(2)?,
             hours: row.get(3)?,
             task: row.get(4)?,
-            start_time: row.get(5)?,
-            end_time: row.get(6)?,
-            created_at: Some(row.get(7)?),
+            created_at: Some(row.get(5)?),
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
@@ -187,8 +183,8 @@ pub fn get_time_logs(db: State<DbConnection>, project_id: i64) -> Result<Vec<Tim
 pub fn create_time_log(db: State<DbConnection>, log: TimeLog) -> Result<i64, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO time_logs (project_id, date, hours, task, start_time, end_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![log.project_id, log.date, log.hours, log.task, log.start_time, log.end_time],
+        "INSERT INTO time_logs (project_id, date, hours, task) VALUES (?1, ?2, ?3, ?4)",
+        params![log.project_id, log.date, log.hours, log.task],
     ).map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
@@ -198,8 +194,8 @@ pub fn update_time_log(db: State<DbConnection>, log: TimeLog) -> Result<(), Stri
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let id = log.id.ok_or("Time log ID is required")?;
     conn.execute(
-        "UPDATE time_logs SET date = ?1, hours = ?2, task = ?3, start_time = ?4, end_time = ?5 WHERE id = ?6",
-        params![log.date, log.hours, log.task, log.start_time, log.end_time, id],
+        "UPDATE time_logs SET date = ?1, hours = ?2, task = ?3 WHERE id = ?4",
+        params![log.date, log.hours, log.task, id],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }

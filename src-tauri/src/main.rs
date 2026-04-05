@@ -78,6 +78,12 @@ fn main() {
             // Company Settings commands
             save_pdf,
             open_file_folder,
+            // Income Breakdown
+            get_category_hours,
+            create_category_hour,
+            update_category_hour,
+            delete_category_hour,
+            get_income_breakdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

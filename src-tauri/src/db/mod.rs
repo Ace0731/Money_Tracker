@@ -479,6 +479,28 @@ pub fn initialize_database() -> Result<DbConnection> {
         let _ = conn.execute("INSERT INTO allocation_rules (tier, emergency_pc, asset_pc, travel_pc) VALUES (3, 0.2, 0.5, 0.3)", []);
     }
 
+    // 36. Add include_in_income_breakdown to categories
+    let _ = conn.execute("ALTER TABLE categories ADD COLUMN include_in_income_breakdown INTEGER DEFAULT 0", []);
+
+    // 37. Add hourly_rate to projects and migrate daily_rate
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN hourly_rate REAL DEFAULT 0.0", []);
+    // Migration: hourly_rate = daily_rate / 8.0
+    let _ = conn.execute("UPDATE projects SET hourly_rate = daily_rate / 8.0 WHERE hourly_rate = 0.0 AND daily_rate > 0", []);
+
+    // 38. Create category_hours table for manual hour entry
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS category_hours (
+            id INTEGER PRIMARY KEY,
+            category_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            hours REAL NOT NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES categories(id)
+        )",
+        [],
+    )?;
+
     Ok(DbConnection(Mutex::new(conn)))
 }
 

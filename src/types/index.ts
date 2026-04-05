@@ -106,6 +106,7 @@ export interface Category {
     notes?: string;
     is_investment: boolean;
     include_in_budget?: boolean;
+    include_in_income_breakdown?: boolean;
 }
 
 export interface Client {
@@ -126,7 +127,7 @@ export interface Project {
     name: string;
     client_id?: number;
     expected_amount?: number;
-    daily_rate?: number;
+    hourly_rate?: number;
     start_date?: string;
     end_date?: string;
     notes?: string;
@@ -251,9 +252,34 @@ export interface TimeLog {
     date: string;
     hours: number;
     task?: string;
-    start_time?: string;
-    end_time?: string;
     created_at?: string;
+}
+
+export interface CategoryHour {
+    id?: number;
+    category_id: number;
+    date: string;
+    hours: number;
+    notes?: string;
+    created_at?: string;
+}
+
+export interface ProjectBreakdownItem {
+    project_id: number;
+    project_name: string;
+    income: number;
+    hours: number;
+    hourly_rate: number;
+}
+
+export interface IncomeBreakdownItem {
+    category_id: number;
+    category_name: string;
+    income: number;
+    hours: number;
+    hourly_rate: number;
+    is_project_based: boolean;
+    projects: ProjectBreakdownItem[];
 }
 
 export interface ProjectPayment {

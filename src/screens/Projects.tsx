@@ -16,7 +16,7 @@ export default function Projects() {
         name: '',
         client_id: undefined,
         expected_amount: undefined,
-        daily_rate: undefined,
+        hourly_rate: undefined,
         start_date: '',
         end_date: '',
         notes: '',
@@ -35,10 +35,7 @@ export default function Projects() {
     const [editingLogId, setEditingLogId] = useState<number | undefined>();
     const [timeLogData, setTimeLogData] = useState({
         hours: 8,
-        task: '',
         date: new Date().toISOString().split('T')[0],
-        start_time: '09:00',
-        end_time: '17:00'
     });
 
     // Payment Log State
@@ -83,7 +80,7 @@ export default function Projects() {
                 name: '',
                 client_id: undefined,
                 expected_amount: undefined,
-                daily_rate: undefined,
+                hourly_rate: undefined,
                 start_date: '',
                 end_date: '',
                 notes: '',
@@ -143,10 +140,7 @@ export default function Projects() {
             setEditingLogId(undefined);
             setTimeLogData({
                 hours: 8,
-                task: '',
                 date: new Date().toISOString().split('T')[0],
-                start_time: '09:00',
-                end_time: '17:00'
             });
         } catch (error) {
             console.error('Failed to log time:', error);
@@ -158,10 +152,7 @@ export default function Projects() {
         setSelectedProjectId(log.project_id);
         setTimeLogData({
             hours: log.hours,
-            task: log.task || '',
             date: log.date,
-            start_time: log.start_time || '09:00',
-            end_time: log.end_time || '17:00'
         });
         setShowTimeLog(true);
     };
@@ -224,7 +215,7 @@ export default function Projects() {
                             name: '',
                             client_id: undefined,
                             expected_amount: undefined,
-                            daily_rate: undefined,
+                            hourly_rate: undefined,
                             start_date: '',
                             end_date: '',
                             notes: '',
@@ -272,7 +263,7 @@ export default function Projects() {
                                     <div>
                                         <div className="text-[10px] text-slate-400 uppercase">Earned (Time)</div>
                                         <div className="text-sm font-bold text-slate-100">
-                                            {formatCurrency(((project.logged_hours || 0) / 8) * (project.daily_rate || 0))}
+                                            {formatCurrency((project.logged_hours || 0) * (project.hourly_rate || 0))}
                                         </div>
                                     </div>
                                     <div className="hover:bg-green-500/10 transition-colors rounded p-1" onClick={(e) => { e.stopPropagation(); project.id && openPayments(project.id); }}>
@@ -304,9 +295,9 @@ export default function Projects() {
                                     <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-bold">
                                         ⏱️ {project.logged_hours || 0}h Logged
                                     </span>
-                                    {project.daily_rate ? (
+                                    {project.hourly_rate ? (
                                         <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
-                                            Target: {formatCurrency(project.daily_rate)}/day
+                                            Target: {formatCurrency(project.hourly_rate)}/hr
                                         </span>
                                     ) : null}
                                 </div>
@@ -395,7 +386,7 @@ export default function Projects() {
                                             <tr key={project.id} className="hover:bg-slate-700/30 transition-colors">
                                                 <td className="px-4 py-3 text-slate-200 font-bold">{project.name}</td>
                                                 <td className="px-4 py-3 text-blue-400 text-sm">{getClientName(project.client_id)}</td>
-                                                <td className="px-4 py-3 text-slate-200 text-sm">{formatCurrency(((project.logged_hours || 0) / 8) * (project.daily_rate || 0))}</td>
+                                                <td className="px-4 py-3 text-slate-200 text-sm">{formatCurrency((project.logged_hours || 0) * (project.hourly_rate || 0))}</td>
                                                 <td className="px-4 py-3 text-green-400 font-bold group/received">
                                                     <div className="flex items-center gap-2">
                                                         {formatCurrency(project.received_amount || 0)}
@@ -409,7 +400,7 @@ export default function Projects() {
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-200 text-sm">
                                                     {project.logged_hours && project.logged_hours > 0
-                                                        ? formatCurrency((project.received_amount || 0) / (project.logged_hours / 8))
+                                                        ? formatCurrency((project.received_amount || 0) / project.logged_hours)
                                                         : '---'}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400 text-sm">{project.logged_hours || 0}h</td>
@@ -531,14 +522,14 @@ export default function Projects() {
                                     />
                                 </div>
                                 <div>
-                                    <label className={darkTheme.label}>Daily Rate (8 hrs)</label>
+                                    <label className={darkTheme.label}>Hourly Rate</label>
                                     <input
                                         type="number"
                                         step="0.01"
-                                        value={formData.daily_rate || ''}
-                                        onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                        value={formData.hourly_rate || ''}
+                                        onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value ? parseFloat(e.target.value) : undefined })}
                                         className={darkTheme.input}
-                                        placeholder="e.g., 1000"
+                                        placeholder="e.g., 500"
                                     />
                                 </div>
                             </div>
@@ -688,56 +679,6 @@ export default function Projects() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className={darkTheme.label}>Start Time</label>
-                                    <input
-                                        type="time"
-                                        required
-                                        value={timeLogData.start_time}
-                                        onChange={(e) => {
-                                            const startTime = e.target.value;
-                                            const endTime = timeLogData.end_time;
-                                            let hours = timeLogData.hours;
-
-                                            if (startTime && endTime) {
-                                                const startParts = startTime.split(':').map(Number);
-                                                const endParts = endTime.split(':').map(Number);
-                                                let diffMin = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
-                                                if (diffMin < 0) diffMin += 24 * 60;
-                                                hours = Math.round((diffMin / 60) * 10) / 10;
-                                            }
-
-                                            setTimeLogData({ ...timeLogData, start_time: startTime, hours });
-                                        }}
-                                        className={darkTheme.input}
-                                    />
-                                </div>
-                                <div>
-                                    <label className={darkTheme.label}>End Time</label>
-                                    <input
-                                        type="time"
-                                        required
-                                        value={timeLogData.end_time}
-                                        onChange={(e) => {
-                                            const endTime = e.target.value;
-                                            const startTime = timeLogData.start_time;
-                                            let hours = timeLogData.hours;
-
-                                            if (startTime && endTime) {
-                                                const startParts = startTime.split(':').map(Number);
-                                                const endParts = endTime.split(':').map(Number);
-                                                let diffMin = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
-                                                if (diffMin < 0) diffMin += 24 * 60;
-                                                hours = Math.round((diffMin / 60) * 10) / 10;
-                                            }
-
-                                            setTimeLogData({ ...timeLogData, end_time: endTime, hours });
-                                        }}
-                                        className={darkTheme.input}
-                                    />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
                                     <label className={darkTheme.label}>Total Hours</label>
                                     <input
                                         type="number"
@@ -749,21 +690,11 @@ export default function Projects() {
                                     />
                                 </div>
                                 <div>
-                                    <label className={darkTheme.label}>Daily Earning</label>
+                                    <label className={darkTheme.label}>Log Earning</label>
                                     <div className="p-2 bg-slate-700/50 rounded text-slate-200 font-mono">
-                                        {formatCurrency((timeLogData.hours / 8) * (projects.find(p => p.id === selectedProjectId)?.daily_rate || 0))}
+                                        {formatCurrency(timeLogData.hours * (projects.find(p => p.id === selectedProjectId)?.hourly_rate || 0))}
                                     </div>
                                 </div>
-                            </div>
-                            <div>
-                                <label className={darkTheme.label}>Task Description</label>
-                                <textarea
-                                    value={timeLogData.task}
-                                    onChange={(e) => setTimeLogData({ ...timeLogData, task: e.target.value })}
-                                    className={darkTheme.textarea}
-                                    rows={2}
-                                    placeholder="What did you work on?"
-                                />
                             </div>
                             <div className="flex justify-end gap-2 pt-4">
                                 <button
@@ -810,11 +741,6 @@ export default function Projects() {
                                             <div className="flex items-center gap-3">
                                                 <div className="text-right">
                                                     <span className="text-lg font-bold text-green-400 block leading-none">{log.hours}h</span>
-                                                    {log.start_time && log.end_time && (
-                                                        <span className="text-[10px] text-slate-500 font-mono italic">
-                                                            ({log.start_time} - {log.end_time})
-                                                        </span>
-                                                    )}
                                                 </div>
                                                 <div className="flex gap-1 opacity-0 group-hover/log:opacity-100 transition-opacity">
                                                     <button
@@ -834,9 +760,6 @@ export default function Projects() {
                                                 </div>
                                             </div>
                                         </div>
-                                        {log.task && (
-                                            <p className="text-sm text-slate-300 bg-slate-900/50 p-2 rounded">{log.task}</p>
-                                        )}
                                     </div>
                                 ))
                             ) : (

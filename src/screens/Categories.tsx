@@ -13,6 +13,7 @@ export default function Categories() {
         notes: '',
         is_investment: false,
         include_in_budget: true,
+        include_in_income_breakdown: false,
     });
 
     useEffect(() => {
@@ -38,7 +39,7 @@ export default function Categories() {
             }
             await loadCategories();
             setShowForm(false);
-            setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_budget: true });
+            setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_budget: true, include_in_income_breakdown: false });
         } catch (error) {
             console.error('Failed to save category:', error);
         }
@@ -61,7 +62,7 @@ export default function Categories() {
                 <h1 className={darkTheme.title}>Categories</h1>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_budget: true });
+                        setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_budget: true, include_in_income_breakdown: false });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}
@@ -199,6 +200,19 @@ export default function Categories() {
                                 />
                                 <label htmlFor="include_in_budget" className="text-sm text-slate-300">
                                     📊 Include in Budget (Safe-to-Spend calculations)
+                                </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="include_in_income_breakdown"
+                                    checked={formData.include_in_income_breakdown || false}
+                                    onChange={(e) => setFormData({ ...formData, include_in_income_breakdown: e.target.checked })}
+                                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500"
+                                />
+                                <label htmlFor="include_in_income_breakdown" className="text-sm text-slate-300">
+                                    ⏱️ Include in Income Breakdown (Hourly/Freelance tracking)
                                 </label>
                             </div>
 
