@@ -7,7 +7,6 @@ const navigationGroups = [
         items: [
             { name: 'Dashboard', path: '/dashboard', icon: '📊' },
             { name: 'Reports', path: '/reports', icon: '📈' },
-            { name: 'Budget & Subs', path: '/budget', icon: '📅' },
         ]
     },
     {

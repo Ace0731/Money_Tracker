@@ -5,6 +5,12 @@ import type { TransactionWithDetails, TransactionBalances } from '../types/trans
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
+import TimelineView from '../components/transactions/TimelineView';
+
+const MONTH_NAMES = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December'
+];
 
 export default function Transactions() {
     const { execute, loading } = useDatabase();
@@ -16,11 +22,26 @@ export default function Transactions() {
     });
     const [showBalances, setShowBalances] = useState(false);
     const [showForm, setShowForm] = useState(false);
+    const [viewOnly, setViewOnly] = useState(false);
 
-    const [filters, setFilters] = useState({
+    // Tab + timeline month state
+    const today = new Date();
+    const [activeTab, setActiveTab] = useState<'list' | 'timeline'>('list');
+    const [timelineMonth, setTimelineMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
+    const [timelineTransactions, setTimelineTransactions] = useState<TransactionWithDetails[]>([]);
+
+    const [filters, setFilters] = useState<{
+        start_date: string;
+        end_date: string;
+        direction: string;
+        from_account_id?: number;
+        to_account_id?: number;
+    }>({
         start_date: '',
         end_date: '',
         direction: '',
+        from_account_id: undefined,
+        to_account_id: undefined,
     });
 
     // Reference data
@@ -62,6 +83,8 @@ export default function Transactions() {
             start_date: firstDay,
             end_date: lastDay,
             direction: '',
+            from_account_id: undefined,
+            to_account_id: undefined,
         });
     }, []);
 
@@ -72,6 +95,42 @@ export default function Transactions() {
         }
         loadReferenceData();
     }, [filters]);
+
+    // Load timeline transactions whenever the timeline month changes
+    useEffect(() => {
+        if (activeTab === 'timeline') {
+            loadTimelineTransactions();
+        }
+    }, [activeTab, timelineMonth]);
+
+    const loadTimelineTransactions = async () => {
+        const { year, month } = timelineMonth;
+        const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const lastDayNum = new Date(year, month + 1, 0).getDate();
+        const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+        try {
+            const data = await execute<TransactionWithDetails[]>('get_transactions', {
+                filters: { start_date: firstDay, end_date: lastDay, direction: '' }
+            });
+            setTimelineTransactions(data);
+        } catch (error) {
+            console.error('Failed to load timeline transactions:', error);
+        }
+    };
+
+    const prevMonth = () => {
+        setTimelineMonth(prev => {
+            if (prev.month === 0) return { year: prev.year - 1, month: 11 };
+            return { ...prev, month: prev.month - 1 };
+        });
+    };
+
+    const nextMonth = () => {
+        setTimelineMonth(prev => {
+            if (prev.month === 11) return { year: prev.year + 1, month: 0 };
+            return { ...prev, month: prev.month + 1 };
+        });
+    };
 
     const loadTransactions = async () => {
         try {
@@ -183,6 +242,29 @@ export default function Transactions() {
             notes: transaction.notes,
         });
         setSelectedTags(tagIds);
+        setViewOnly(false);
+        setShowForm(true);
+    };
+
+    const handleView = async (transaction: TransactionWithDetails) => {
+        const tagIds = await execute<number[]>('get_transaction_tags', { transactionId: transaction.id });
+
+        setFormData({
+            id: transaction.id,
+            date: transaction.date,
+            amount: transaction.amount,
+            direction: transaction.direction,
+            from_account_id: transaction.from_account_id,
+            to_account_id: transaction.to_account_id,
+            category_id: transaction.category_id,
+            client_id: transaction.client_id,
+            project_id: transaction.project_id,
+            investment_id: transaction.investment_id,
+            goal_id: transaction.goal_id,
+            notes: transaction.notes,
+        });
+        setSelectedTags(tagIds);
+        setViewOnly(true);
         setShowForm(true);
     };
 
@@ -201,6 +283,7 @@ export default function Transactions() {
             notes: '',
         });
         setSelectedTags([]);
+        setViewOnly(false);
     };
 
     const filteredCategories = categories.filter(c => c.kind === formData.direction);
@@ -222,6 +305,97 @@ export default function Transactions() {
                     Add Transaction
                 </button>
             </div>
+
+            {/* ── Tab Bar ── */}
+            <div className="flex gap-2 mb-6">
+                {(['list', 'timeline'] as const).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            padding: '8px 20px',
+                            borderRadius: '8px',
+                            fontWeight: 600,
+                            fontSize: '14px',
+                            transition: 'all 0.2s',
+                            border: activeTab === tab
+                                ? '1px solid rgba(245,158,11,0.6)'
+                                : '1px solid rgba(100,116,139,0.3)',
+                            background: activeTab === tab
+                                ? 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.1))'
+                                : 'rgba(30,41,59,0.6)',
+                            color: activeTab === tab ? '#fbbf24' : '#94a3b8',
+                            cursor: 'pointer',
+                            boxShadow: activeTab === tab ? '0 0 12px rgba(245,158,11,0.2)' : 'none',
+                        }}
+                    >
+                        {tab === 'list' ? '📋 List' : '🌿 Timeline'}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Month Navigator (Timeline only) ── */}
+            {activeTab === 'timeline' && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '20px',
+                    marginBottom: '28px',
+                    padding: '12px 24px',
+                    background: 'rgba(15,23,42,0.8)',
+                    border: '1px solid rgba(245,158,11,0.25)',
+                    borderRadius: '12px',
+                }}>
+                    <button
+                        onClick={prevMonth}
+                        style={{
+                            background: 'rgba(245,158,11,0.12)',
+                            border: '1px solid rgba(245,158,11,0.3)',
+                            borderRadius: '8px',
+                            color: '#fbbf24',
+                            padding: '6px 16px',
+                            cursor: 'pointer',
+                            fontSize: '18px',
+                            transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.25)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.12)')}
+                    >
+                        ◀
+                    </button>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{
+                            fontSize: '20px',
+                            fontWeight: 800,
+                            color: '#fbbf24',
+                            letterSpacing: '0.05em',
+                        }}>
+                            {MONTH_NAMES[timelineMonth.month]} {timelineMonth.year}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', letterSpacing: '0.12em' }}>
+                            TIMELINE · VARIANT RECORD
+                        </div>
+                    </div>
+                    <button
+                        onClick={nextMonth}
+                        style={{
+                            background: 'rgba(245,158,11,0.12)',
+                            border: '1px solid rgba(245,158,11,0.3)',
+                            borderRadius: '8px',
+                            color: '#fbbf24',
+                            padding: '6px 16px',
+                            cursor: 'pointer',
+                            fontSize: '18px',
+                            transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.25)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.12)')}
+                    >
+                        ▶
+                    </button>
+                </div>
+            )}
 
             {/* Balance Table */}
             <div className={darkTheme.card + " mb-6 overflow-hidden"}>
@@ -317,46 +491,83 @@ export default function Transactions() {
                 )}
             </div>
 
-            {/* Filters */}
-            <div className={darkTheme.card + " p-4 mb-6"}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label className={darkTheme.label}>Start Date</label>
-                        <input
-                            type="date"
-                            value={filters.start_date}
-                            onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-                            className={darkTheme.input}
-                        />
-                    </div>
-                    <div>
-                        <label className={darkTheme.label}>End Date</label>
-                        <input
-                            type="date"
-                            value={filters.end_date}
-                            onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-                            className={darkTheme.input}
-                        />
-                    </div>
-                    <div>
-                        <label className={darkTheme.label}>Direction</label>
-                        <select
-                            value={filters.direction}
-                            onChange={(e) => setFilters({ ...filters, direction: e.target.value })}
-                            className={darkTheme.select}
-                        >
-                            <option value="">All</option>
-                            <option value="income">Income</option>
-                            <option value="expense">Expense</option>
-                            <option value="transfer">Transfer</option>
-                        </select>
+            {/* Filters — list tab only */}
+            {activeTab === 'list' && (
+                <div className={darkTheme.card + " p-4 mb-6"}>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div className="md:col-span-1">
+                            <label className={darkTheme.label}>Start Date</label>
+                            <input
+                                type="date"
+                                value={filters.start_date}
+                                onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
+                                className={darkTheme.input}
+                            />
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className={darkTheme.label}>End Date</label>
+                            <input
+                                type="date"
+                                value={filters.end_date}
+                                onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
+                                className={darkTheme.input}
+                            />
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className={darkTheme.label}>Direction</label>
+                            <select
+                                value={filters.direction}
+                                onChange={(e) => setFilters({ ...filters, direction: e.target.value })}
+                                className={darkTheme.select}
+                            >
+                                <option value="">All</option>
+                                <option value="income">Income</option>
+                                <option value="expense">Expense</option>
+                                <option value="transfer">Transfer</option>
+                            </select>
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className={darkTheme.label}>Source Account</label>
+                            <select
+                                value={filters.from_account_id || ''}
+                                onChange={(e) => setFilters({ ...filters, from_account_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                className={darkTheme.select}
+                            >
+                                <option value="">All Sources</option>
+                                {accounts.map(acc => (
+                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="md:col-span-1">
+                            <label className={darkTheme.label}>Destination Account</label>
+                            <select
+                                value={filters.to_account_id || ''}
+                                onChange={(e) => setFilters({ ...filters, to_account_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                className={darkTheme.select}
+                            >
+                                <option value="">All Destinations</option>
+                                {accounts.map(acc => (
+                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {loading && <div className={darkTheme.loading}>Loading...</div>}
 
-            {/* Transactions Table */}
+            {/* ── Timeline View ── */}
+            {activeTab === 'timeline' && (
+                <TimelineView
+                    transactions={timelineTransactions}
+                    onViewTransaction={handleView}
+                />
+            )}
+
+            {/* Transactions Table — list tab only */}
+            {activeTab === 'list' && (
             <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
                 <table className={darkTheme.table}>
                     <thead className={darkTheme.tableHeader}>
@@ -428,14 +639,34 @@ export default function Transactions() {
                     </div>
                 )}
             </div>
+            )}
 
             {/* Transaction Form Modal */}
             {showForm && (
                 <div className={darkTheme.modalOverlay}>
                     <div className={darkTheme.modalContentLarge}>
-                        <h2 className={darkTheme.modalTitle}>
-                            {formData.id ? 'Edit Transaction' : 'Add Transaction'}
-                        </h2>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className={darkTheme.modalTitle} style={{ margin: 0 }}>
+                                {viewOnly ? '🔍 View Transaction' : (formData.id ? 'Edit Transaction' : 'Add Transaction')}
+                            </h2>
+                            {viewOnly && (
+                                <button
+                                    onClick={() => setViewOnly(false)}
+                                    style={{
+                                        padding: '6px 16px',
+                                        borderRadius: '8px',
+                                        background: 'rgba(245,158,11,0.15)',
+                                        border: '1px solid rgba(245,158,11,0.4)',
+                                        color: '#fbbf24',
+                                        fontWeight: 600,
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    ✏️ Edit
+                                </button>
+                            )}
+                        </div>
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {/* Direction */}
@@ -446,7 +677,9 @@ export default function Transactions() {
                                         <button
                                             key={dir}
                                             type="button"
+                                            disabled={viewOnly}
                                             onClick={() => {
+                                                if (viewOnly) return;
                                                 const newDir = dir as any;
                                                 setFormData({
                                                     ...formData,
@@ -461,7 +694,7 @@ export default function Transactions() {
                                                     dir === 'expense' ? 'bg-red-600 text-white' :
                                                         'bg-blue-600 text-white'
                                                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                                                }`}
+                                                } ${viewOnly ? 'opacity-60 cursor-not-allowed' : ''}`}
                                         >
                                             {dir}
                                         </button>
@@ -477,15 +710,17 @@ export default function Transactions() {
                                         type="number"
                                         step="0.01"
                                         required
+                                        readOnly={viewOnly}
                                         value={formData.amount || ''}
                                         onChange={(e) => {
+                                            if (viewOnly) return;
                                             const value = e.target.value;
                                             setFormData({
                                                 ...formData,
                                                 amount: value === '' ? 0 : parseFloat(value)
                                             });
                                         }}
-                                        className={darkTheme.input}
+                                        className={darkTheme.input + (viewOnly ? ' opacity-60 cursor-not-allowed' : '')}
                                         placeholder="0.00"
                                     />
                                 </div>
@@ -494,9 +729,10 @@ export default function Transactions() {
                                     <input
                                         type="date"
                                         required
+                                        readOnly={viewOnly}
                                         value={formData.date}
-                                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                        className={darkTheme.input}
+                                        onChange={(e) => { if (!viewOnly) setFormData({ ...formData, date: e.target.value }); }}
+                                        className={darkTheme.input + (viewOnly ? ' opacity-60 cursor-not-allowed' : '')}
                                     />
                                 </div>
                             </div>
@@ -666,7 +902,7 @@ export default function Transactions() {
                             {/* Actions */}
                             <div className="flex justify-between items-center pt-4">
                                 <div>
-                                    {formData.id && (
+                                    {formData.id && !viewOnly && (
                                         <button 
                                             type="button" 
                                             onClick={handleDelete}
@@ -677,12 +913,14 @@ export default function Transactions() {
                                     )}
                                 </div>
                                 <div className="flex gap-2">
-                                    <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>
-                                        Cancel
+                                    <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className={darkTheme.btnCancel}>
+                                        Close
                                     </button>
-                                    <button type="submit" className={darkTheme.btnPrimary}>
-                                        {formData.id ? 'Update' : 'Create'}
-                                    </button>
+                                    {!viewOnly && (
+                                        <button type="submit" className={darkTheme.btnPrimary}>
+                                            {formData.id ? 'Update' : 'Create'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </form>

@@ -19,6 +19,7 @@ export interface TransactionWithDetails {
     goal_name?: string;
     notes?: string;
     tags: string[];
+    category_is_investment?: boolean;
 }
 export interface AccountBalance {
     account_id: number;

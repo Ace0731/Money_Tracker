@@ -41,6 +41,7 @@ pub struct TransactionWithDetails {
     pub goal_name: Option<String>,
     pub notes: Option<String>,
     pub tags: Vec<String>,
+    pub category_is_investment: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +49,8 @@ pub struct TransactionFilters {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub direction: Option<String>,
+    pub from_account_id: Option<i64>,
+    pub to_account_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -195,7 +198,7 @@ pub fn get_transactions(
             t.project_id, p.name as project_name,
             t.investment_id, i.name as investment_name,
             t.goal_id, g.name as goal_name,
-            t.notes
+            t.notes, c.is_investment as category_is_investment
         FROM transactions t
         LEFT JOIN accounts fa ON t.from_account_id = fa.id
         LEFT JOIN accounts ta ON t.to_account_id = ta.id
@@ -218,6 +221,12 @@ pub fn get_transactions(
             if !dir.is_empty() {
                 sql.push_str(&format!(" AND t.direction = '{}'", dir));
             }
+        }
+        if let Some(from_id) = f.from_account_id {
+            sql.push_str(&format!(" AND t.from_account_id = {}", from_id));
+        }
+        if let Some(to_id) = f.to_account_id {
+            sql.push_str(&format!(" AND t.to_account_id = {}", to_id));
         }
     }
     
@@ -246,6 +255,7 @@ pub fn get_transactions(
                 goal_id: row.get(16)?,
                 goal_name: row.get(17)?,
                 notes: row.get(18)?,
+                category_is_investment: row.get::<_, i32>(19)? != 0,
                 tags: Vec::new(),
             })
         })

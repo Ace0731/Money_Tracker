@@ -2,11 +2,13 @@
  * Format amount in Indian Rupee style
  */
 export const formatCurrency = (amount: number): string => {
+    // Prevent negative zero (-0) display
+    const normalizedAmount = Math.abs(amount) < 0.005 ? 0 : amount;
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
         currency: 'INR',
         minimumFractionDigits: 2,
-    }).format(amount);
+    }).format(normalizedAmount);
 };
 
 /**
