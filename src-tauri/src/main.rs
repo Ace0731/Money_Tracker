@@ -53,6 +53,7 @@ fn main() {
             get_investment_platform_summary,
             sync_investment_prices,
             add_investment_lot,
+            update_investment_lot,
             delete_investment_lot,
             get_live_market_price,
             get_project_payments,

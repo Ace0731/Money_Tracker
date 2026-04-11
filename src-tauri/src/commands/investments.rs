@@ -187,23 +187,28 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                     _ => {}
                 }
             }
+            
+            // Round sums to 2 decimal places to eliminate floating point residue
+            total_invested = (total_invested * 100.0).round() / 100.0;
+            total_expenses_lots = (total_expenses_lots * 100.0).round() / 100.0;
+            total_units = (total_units * 10000.0).round() / 10000.0; // Keep units at 4 decimals
 
             // Include transfers and extra expenses from transactions (legacy/manual)
             let total_transfers: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE investment_id = ?1 AND direction = 'transfer'",
+                "SELECT COALESCE(ROUND(SUM(amount), 2), 0) FROM transactions WHERE investment_id = ?1 AND direction = 'transfer'",
                 [inv_id],
                 |r| r.get(0)
             ).unwrap_or(0.0);
 
             let total_expenses_tx: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE investment_id = ?1 AND direction = 'expense'",
+                "SELECT COALESCE(ROUND(SUM(amount), 2), 0) FROM transactions WHERE investment_id = ?1 AND direction = 'expense'",
                 [inv_id],
                 |r| r.get(0)
             ).unwrap_or(0.0);
 
-            let total_expenses = total_expenses_tx + total_expenses_lots;
+            let total_expenses = (total_expenses_tx + total_expenses_lots);
             // Total invested capital is lots cost + manual transfers
-            let total_invested_capital = total_invested + total_transfers;
+            let total_invested_capital = (total_invested + total_transfers);
             
             let avg_buy_price = if total_units > 0.0 { total_invested / total_units } else { 0.0 };
 
@@ -231,12 +236,12 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 account_name,
                 lots,
                 total_units,
-                avg_buy_price,
-                total_invested: total_invested_capital,
-                total_expenses,
-                current_valuation,
-                net_gain,
-                gain_percentage,
+                avg_buy_price: (avg_buy_price * 10000.0).round() / 10000.0,
+                total_invested: (total_invested_capital * 100.0).round() / 100.0,
+                total_expenses: (total_expenses * 100.0).round() / 100.0,
+                current_valuation: (current_valuation * 100.0).round() / 100.0,
+                net_gain: (net_gain * 100.0).round() / 100.0,
+                gain_percentage: (gain_percentage * 100.0).round() / 100.0,
             })
         })
         .map_err(|e| e.to_string())?
@@ -353,19 +358,19 @@ pub fn get_investment_platform_summary(db: State<DbConnection>) -> Result<Vec<Pl
         let opening_balance: f64 = row.get(2)?;
         
         let incoming: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE to_account_id = ?1",
+            "SELECT COALESCE(ROUND(SUM(amount), 2), 0) FROM transactions WHERE to_account_id = ?1",
             [id],
             |r| r.get(0)
         ).unwrap_or(0.0);
         
         let outgoing: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE from_account_id = ?1",
+            "SELECT COALESCE(ROUND(SUM(amount), 2), 0) FROM transactions WHERE from_account_id = ?1",
             [id],
             |r| r.get(0)
         ).unwrap_or(0.0);
 
         let allocated: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(l.quantity * l.price_per_unit + l.charges), 0)
+            "SELECT COALESCE(ROUND(SUM(l.quantity * l.price_per_unit + l.charges), 2), 0)
              FROM investment_lots l
              JOIN investments i ON l.investment_id = i.id
              WHERE i.account_id = ?1",
@@ -376,7 +381,7 @@ pub fn get_investment_platform_summary(db: State<DbConnection>) -> Result<Vec<Pl
         Ok(PlatformBalance {
             account_id: id,
             name,
-            balance: opening_balance + incoming - outgoing - allocated,
+            balance: ((opening_balance + incoming - outgoing - allocated) * 100.0).round() / 100.0,
         })
     }).map_err(|e| e.to_string())?;
     
@@ -406,6 +411,27 @@ pub fn add_investment_lot(db: State<DbConnection>, lot: InvestmentLot) -> Result
     .map_err(|e| e.to_string())?;
     
     Ok(conn.last_insert_rowid())
+}
+
+#[tauri::command]
+pub fn update_investment_lot(db: State<DbConnection>, lot: InvestmentLot) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let id = lot.id.ok_or("Lot ID is required")?;
+    
+    conn.execute(
+        "UPDATE investment_lots SET quantity = ?1, price_per_unit = ?2, charges = ?3, date = ?4, lot_type = ?5 WHERE id = ?6",
+        params![
+            lot.quantity,
+            lot.price_per_unit,
+            lot.charges,
+            lot.date,
+            lot.lot_type,
+            id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    
+    Ok(())
 }
 
 #[tauri::command]
@@ -439,11 +465,18 @@ pub async fn sync_investment_prices(db: State<'_, DbConnection>) -> Result<(), S
         let mut new_price: Option<f64> = None;
 
         if inv_type == "mf" {
-            let url = format!("https://api.mfapi.in/mf/{}", symbol);
+            let url = format!("https://api.mfapi.in/mf/{}/latest", symbol);
             if let Ok(resp) = client.get(&url).send().await {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(nav) = json["data"][0]["nav"].as_str() {
-                        new_price = nav.parse::<f64>().ok();
+                if let Ok(body) = resp.text().await {
+                    let trimmed = body.trim_start_matches('\u{feff}').trim();
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        if let Some(data) = json["data"].as_array() {
+                            if !data.is_empty() {
+                                if let Some(nav) = data[0]["nav"].as_str() {
+                                    new_price = nav.parse::<f64>().ok();
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -490,12 +523,23 @@ pub async fn get_live_market_price(symbol: String, inv_type: String) -> Result<f
     println!("Fetching live price for symbol: {} (type: {})", symbol, inv_type);
 
     if inv_type == "mf" {
-        let url = format!("https://api.mfapi.in/mf/{}", symbol);
+        let url = format!("https://api.mfapi.in/mf/{}/latest", symbol);
         println!("Mutual Fund URL: {}", url);
         let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-        println!("Response Status: {}", resp.status());
         
-        let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        let status = resp.status();
+        let body = resp.text().await.map_err(|e| e.to_string())?;
+        
+        println!("Response Status: {}", status);
+        
+        if !status.is_success() {
+            return Err(format!("MF API returned error {}: {}", status, body));
+        }
+
+        let trimmed = body.trim_start_matches('\u{feff}').trim();
+        let json: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+            format!("Failed to parse MF response: {}. Body: {}", e, trimmed)
+        })?;
         
         if let Some(data) = json["data"].as_array() {
             println!("Data records found: {}", data.len());

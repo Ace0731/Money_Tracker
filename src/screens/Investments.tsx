@@ -40,6 +40,8 @@ export default function Investments() {
     });
     const [showForm, setShowForm] = useState(false);
     const [fetchingPrice, setFetchingPrice] = useState(false);
+    const [editingLotId, setEditingLotId] = useState<number | null>(null);
+    const [bankAmount, setBankAmount] = useState<string>('');
     const [formData, setFormData] = useState<Investment>({
         name: '',
         investment_type: 'stock',
@@ -223,23 +225,49 @@ export default function Investments() {
     const handleAddLot = (invId: number, type?: string) => {
         setLotFormData({
             investment_id: invId,
-            quantity: type === 'fd' || type === 'rd' ? 1 : 0,
+            quantity: type === 'fd' || type === 'rd' || type === 'nps' || type === 'ppf' || type === 'pf' ? 1 : 0,
             price_per_unit: 0,
             charges: 0,
             date: new Date().toISOString().split('T')[0],
             lot_type: 'buy'
         });
+        setEditingLotId(null);
+        setBankAmount('');
+        setShowLotForm(true);
+    };
+
+    const handleEditLot = (lot: InvestmentLot) => {
+        setLotFormData({
+            ...lot,
+            investment_id: lot.investment_id,
+            date: lot.date || new Date().toISOString().split('T')[0]
+        });
+        setEditingLotId(lot.id!);
+        
+        // Defensive number conversion for bankAmount calculation
+        const qty = Number(lot.quantity) || 0;
+        const price = Number(lot.price_per_unit) || 0;
+        const chg = Number(lot.charges) || 0;
+        setBankAmount((qty * price + chg).toFixed(2));
+        
         setShowLotForm(true);
     };
 
     const handleLotSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await execute('add_investment_lot', { lot: lotFormData });
+            if (editingLotId) {
+                await execute('update_investment_lot', { lot: { ...lotFormData, id: editingLotId } });
+            } else {
+                await execute('add_investment_lot', { lot: lotFormData });
+            }
             await loadData();
             setShowLotForm(false);
+            setEditingLotId(null);
+            setBankAmount('');
         } catch (error) {
-            console.error('Failed to add lot:', error);
+            console.error('Failed to submit lot:', error);
+            Swal.fire('Error', error as string, 'error');
         }
     };
 
@@ -541,8 +569,23 @@ export default function Investments() {
                                         ))}
                                     </Pie>
                                     <Tooltip
-                                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', fontSize: '12px' }}
-                                        formatter={(value: number) => formatCurrency(value)}
+                                        content={({ active, payload }) => {
+                                            if (active && payload && payload.length) {
+                                                const entry = payload[0];
+                                                return (
+                                                    <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl min-w-[160px]">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <div className="w-2 h-2 rounded-full" style={{ background: entry.payload.fill || entry.color }} />
+                                                            <span className="text-slate-200 font-bold">{entry.name}</span>
+                                                        </div>
+                                                        <div className="text-xl font-mono text-slate-100">
+                                                            {formatCurrency(Number(entry.value))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
                                     />
                                     <Legend wrapperStyle={{ fontSize: '10px' }} />
                                 </PieChart>
@@ -601,8 +644,8 @@ export default function Investments() {
                                                         {s.investment.investment_type} • {s.account_name}
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                                                    <button onClick={() => handleAddLot(s.investment.id!)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Buy</button>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
                                                     <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
                                                     <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
                                                 </div>
@@ -615,7 +658,7 @@ export default function Investments() {
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] text-slate-500 uppercase">Avg Price</div>
-                                                    <div className="text-sm font-medium text-slate-300">{formatUnits(s.avg_buy_price, 6)}</div>
+                                                    <div className="text-sm font-medium text-slate-300">{formatUnits(s.avg_buy_price)}</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="text-[10px] text-slate-500 uppercase">Returns</div>
@@ -650,6 +693,7 @@ export default function Investments() {
                                                 </div>
                                             </div>
                                             <div className="flex gap-2">
+                                                <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
                                                 <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
                                                 <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
                                             </div>
@@ -1081,7 +1125,7 @@ export default function Investments() {
             }
             {
                 showLotForm && (
-                    <div className={darkTheme.modalOverlay}>
+                    <div className={darkTheme.modalOverlayTop}>
                         <div className={darkTheme.modalContent}>
                             <div className="flex justify-between items-center mb-6">
                                 <h2 className={darkTheme.modalTitle}>Record Buy / Lot</h2>
@@ -1091,43 +1135,69 @@ export default function Investments() {
                                 {(() => {
                                     const inv = summaries.find(s => s.investment.id === lotFormData.investment_id)?.investment;
                                     const isMarket = inv?.investment_type === 'stock' || inv?.investment_type === 'mf';
-
+                                    
+                                    // Make variables available by expanding the scope or returning the whole form
                                     return (
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>{isMarket ? 'Quantity *' : 'Quantity / Multiplier *'}</label>
-                                                <input
-                                                    type="number" step="0.000001" required
-                                                    value={lotFormData.quantity || ''}
-                                                    onChange={(e) => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder={isMarket ? "Units bought" : "Default 1"}
-                                                />
+                                        <>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className={darkTheme.label}>{isMarket ? 'Quantity *' : 'Quantity / Multiplier *'}</label>
+                                                    <input
+                                                        type="number" step="0.000001" required
+                                                        value={lotFormData.quantity ? Number(lotFormData.quantity.toFixed(4)) : ''}
+                                                        onChange={(e) => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })}
+                                                        className={darkTheme.input}
+                                                        placeholder={isMarket ? "Units bought" : "Default 1"}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className={darkTheme.label}>{isMarket ? 'Price per Unit *' : 'Principal Amount *'}</label>
+                                                    <input
+                                                        type="number" step="0.000001" required
+                                                        value={lotFormData.price_per_unit ? Number(lotFormData.price_per_unit.toFixed(4)) : ''}
+                                                        onChange={(e) => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })}
+                                                        className={darkTheme.input}
+                                                        placeholder={isMarket ? "Cost per share" : "Invested amount"}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className={darkTheme.label}>{isMarket ? 'Price per Unit *' : 'Principal Amount *'}</label>
-                                                <input
-                                                    type="number" step="0.000001" required
-                                                    value={lotFormData.price_per_unit || ''}
-                                                    onChange={(e) => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder={isMarket ? "Cost per share" : "Invested amount"}
-                                                />
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className={darkTheme.label}>{isMarket ? 'Total Amount Paid (Bank)' : 'Total Principal Paid'}</label>
+                                                    <input
+                                                        type="number" step="0.01"
+                                                        value={bankAmount}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            setBankAmount(val);
+                                                            const total = parseFloat(val) || 0;
+                                                            const subtotal = (lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0);
+                                                            const calculatedCharges = Math.max(0, total - subtotal);
+                                                setLotFormData({ ...lotFormData, charges: parseFloat(calculatedCharges.toFixed(4)) });
+                                                        }}
+                                                        className={darkTheme.input + " border-blue-500/30"}
+                                                        placeholder="Total debited from bank"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className={darkTheme.label}>Charges (Auto-calculated)</label>
+                                                    <input
+                                                        type="number" step="0.000001"
+                                                        value={lotFormData.charges ? Number(lotFormData.charges.toFixed(4)) : ''}
+                                                        onChange={(e) => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })}
+                                                        className={darkTheme.input + " bg-slate-800/50"}
+                                                        placeholder="Brokerage/Tax"
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
+                                        </>
                                     );
                                 })()}
+
+
+
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={darkTheme.label}>Charges / Fees</label>
-                                        <input
-                                            type="number" step="0.000001"
-                                            value={lotFormData.charges || ''}
-                                            onChange={(e) => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })}
-                                            className={darkTheme.input}
-                                            placeholder="Brokerage/Tax"
-                                        />
-                                    </div>
                                     <div>
                                         <label className={darkTheme.label}>Date</label>
                                         <input
@@ -1137,22 +1207,39 @@ export default function Investments() {
                                             className={darkTheme.input}
                                         />
                                     </div>
+                                    <div>
+                                        <label className={darkTheme.label}>Lot Type</label>
+                                        <select
+                                            value={lotFormData.lot_type}
+                                            onChange={(e) => setLotFormData({ ...lotFormData, lot_type: e.target.value as 'buy' | 'sell' })}
+                                            className={darkTheme.input}
+                                        >
+                                            <option value="buy">Buy / Deposit</option>
+                                            <option value="sell">Sell / Withdrawal</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <div className="bg-slate-800/30 p-3 rounded text-xs text-slate-400">
                                     <div className="flex justify-between mb-1">
-                                        <span>Subtotal:</span>
+                                        <span>Subtotal (Qty * Price):</span>
                                         <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0))}</span>
                                     </div>
                                     <div className="flex justify-between font-bold text-slate-200">
-                                        <span>Total Value to Deduct from Cash:</span>
+                                        <span>Total Investment Value:</span>
                                         <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0) + (lotFormData.charges || 0))}</span>
                                     </div>
+                                    <p className="mt-2 text-[10px] text-slate-500 italic">
+                                        * Enter Quantity and Price first, then the Total Bank Amount to auto-calculate charges.
+                                    </p>
                                 </div>
 
                                 <div className="flex justify-end gap-2 pt-4">
-                                    <button type="button" onClick={() => setShowLotForm(false)} className={darkTheme.btnCancel}>Cancel</button>
-                                    <button type="submit" className={darkTheme.btnPrimary}>Record Lot</button>
+                                    <button type="button" onClick={() => {
+                                        setShowLotForm(false);
+                                        setEditingLotId(null);
+                                    }} className={darkTheme.btnCancel}>Cancel</button>
+                                    <button type="submit" className={darkTheme.btnPrimary}>{editingLotId ? 'Update Lot' : 'Record Lot'}</button>
                                 </div>
                             </form>
                         </div>
@@ -1172,15 +1259,15 @@ export default function Investments() {
                             <div className="grid grid-cols-3 gap-4 text-sm">
                                 <div>
                                     <span className="text-slate-500">Current Price:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.investment.current_price || 0, 6)}</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.investment.current_price || 0)}</span>
                                 </div>
                                 <div>
                                     <span className="text-slate-500">Total Units:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.total_units, 6)}</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.total_units)}</span>
                                 </div>
                                 <div>
                                     <span className="text-slate-500">Avg Buy Price:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.avg_buy_price, 6)}</span>
+                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.avg_buy_price)}</span>
                                 </div>
                             </div>
                         </div>
@@ -1206,16 +1293,24 @@ export default function Investments() {
                                             return (
                                                 <tr key={lot.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
                                                     <td className="py-3 px-2 font-mono text-blue-400">{lot.date.split(' ')[0]}</td>
-                                                    <td className="py-3 px-2 text-right font-medium font-mono">{formatUnits(lot.quantity, 6)}</td>
-                                                    <td className="py-3 px-2 text-right font-mono">{formatUnits(lot.price_per_unit, 6)}</td>
+                                                    <td className="py-3 px-2 text-right font-medium font-mono">{formatUnits(lot.quantity)}</td>
+                                                    <td className="py-3 px-2 text-right font-mono">{formatUnits(lot.price_per_unit)}</td>
                                                     <td className="py-3 px-2 text-right text-slate-500">{formatCurrency(lot.charges)}</td>
                                                     <td className={`py-3 px-2 text-right font-bold ${lotGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                                         {lotGain >= 0 ? '+' : ''}{formatCurrency(lotGain)}
                                                     </td>
                                                     <td className="py-3 px-2 text-right">
                                                         <button
+                                                            onClick={() => handleEditLot(lot)}
+                                                            className="text-slate-600 hover:text-blue-400 text-lg mr-3"
+                                                            title="Edit Lot"
+                                                        >
+                                                            ✏️
+                                                        </button>
+                                                        <button
                                                             onClick={() => handleDeleteLot(lot.id!)}
                                                             className="text-slate-600 hover:text-red-400 text-lg"
+                                                            title="Delete Lot"
                                                         >
                                                             ×
                                                         </button>

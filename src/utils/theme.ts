@@ -19,6 +19,7 @@ export const darkTheme = {
 
     // Modal
     modalOverlay: "fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50",
+    modalOverlayTop: "fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-[60]",
     modalContent: "bg-slate-800 rounded-lg border border-slate-700 max-w-md w-full p-6 shadow-2xl",
     modalContentLarge: "bg-slate-800 rounded-lg border border-slate-700 max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto",
     modalTitle: "text-2xl font-bold text-slate-100 mb-4",
@@ -48,4 +49,23 @@ export const darkTheme = {
 
     // Loading
     loading: "text-center py-4 text-slate-400",
+
+    // Tooltips (Recharts standard)
+    tooltip: {
+        contentStyle: {
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+            padding: '12px'
+        },
+        itemStyle: {
+            fontSize: '13px'
+        },
+        labelStyle: {
+            color: '#94a3b8',
+            fontWeight: 'bold',
+            marginBottom: '4px'
+        }
+    }
 };

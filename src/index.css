@@ -70,4 +70,41 @@
   .table-row {
     @apply hover:bg-slate-800 cursor-pointer transition-colors border-b border-slate-800;
   }
+
+  /* Recharts Tooltip Theme Overrides - Globally fixes black text on dark background */
+  .recharts-default-tooltip {
+    background-color: #0f172a !important;
+    border: 1px solid #334155 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+    padding: 10px 12px !important;
+  }
+
+  .recharts-tooltip-label {
+    color: #94a3b8 !important;
+    font-weight: bold !important;
+    margin-bottom: 6px !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+  }
+
+  /* Force all children of the tooltip to be readable light colors */
+  .recharts-tooltip-item,
+  .recharts-tooltip-item-name,
+  .recharts-tooltip-item-separator,
+  .recharts-tooltip-item-value,
+  .recharts-tooltip-item-list li {
+    color: #f1f5f9 !important;
+    font-family: inherit !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    fill: #f1f5f9 !important; /* For SVG based items if any */
+  }
+
+  .recharts-tooltip-item-list {
+    margin-top: 4px !important;
+    padding: 0 !important;
+    list-style: none !important;
+  }
 }

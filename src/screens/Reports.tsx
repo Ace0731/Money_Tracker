@@ -463,8 +463,23 @@ export default function Reports() {
                                             ))}
                                         </Pie>
                                         <Tooltip
-                                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
-                                            formatter={(value: number) => formatCurrency(value)}
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    const entry = payload[0];
+                                                    return (
+                                                        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl min-w-[160px]">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <div className="w-2 h-2 rounded-full" style={{ background: entry.payload.fill || entry.color }} />
+                                                                <span className="text-slate-200 font-bold">{entry.name}</span>
+                                                            </div>
+                                                            <div className="text-xl font-mono text-slate-100">
+                                                                {formatCurrency(Number(entry.value))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
                                         />
                                     </PieChart>
                                 </ResponsiveContainer>
@@ -540,14 +555,28 @@ export default function Reports() {
                                     />
                                     <YAxis stroke="#64748b" fontSize={11} tickFormatter={(val) => formatCurrency(val)} />
                                     <Tooltip
-                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '12px' }}
-                                        formatter={(value: number, name: string) => {
-                                            if (name === 'achieved') return [formatCurrency(value), 'Achieved'];
-                                            if (name === 'gap')      return [formatCurrency(value), 'Gap'];
-                                            if (name === 'surplus')  return [formatCurrency(value), 'Surplus'];
-                                            return [formatCurrency(value), name];
+                                        content={({ active, payload, label }) => {
+                                            if (active && payload && payload.length) {
+                                                return (
+                                                    <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl">
+                                                        <p className="text-slate-400 font-bold mb-2">{label}</p>
+                                                        {payload.map((entry: any, index: number) => (
+                                                            <div key={index} className="flex justify-between gap-4 text-xs mb-1 last:mb-0">
+                                                                <span style={{ color: entry.color }} className="font-medium">
+                                                                    {entry.name === 'achieved' ? 'Achieved' : 
+                                                                     entry.name === 'gap' ? 'Gap' : 
+                                                                     entry.name === 'surplus' ? 'Surplus' : entry.name}:
+                                                                </span>
+                                                                <span className="text-slate-100 font-mono">
+                                                                    {formatCurrency(entry.value)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
                                         }}
-                                        labelStyle={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}
                                     />
                                     <Bar dataKey="achieved" stackId="p" fill="#22c55e" radius={[0, 0, 0, 0]} name="achieved" barSize={32} />
                                     <Bar dataKey="gap"      stackId="p" fill="#f97316" radius={[4, 4, 0, 0]} name="gap"      barSize={32} />
