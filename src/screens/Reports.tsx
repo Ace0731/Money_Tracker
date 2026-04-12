@@ -24,6 +24,13 @@ interface MonthlySummary {
     net: number;
 }
 
+interface NetWorthPoint {
+    month: string;
+    cash: number;
+    invested: number;
+    total: number;
+}
+
 interface CategorySummary {
     category_name: string;
     total: number;
@@ -77,6 +84,7 @@ export default function Reports() {
 
     const [projectIncomeReport, setProjectIncomeReport] = useState<ProjectIncomeSummary[]>([]);
     const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
+    const [netWorthTrend, setNetWorthTrend] = useState<NetWorthPoint[]>([]);
 
     // Metadata for Filters
     const [clients, setClients] = useState<Client[]>([]);
@@ -120,13 +128,14 @@ export default function Reports() {
                 project_id: filters.project_id || null,
             };
 
-            const [monthly, incCat, expCat, invCat, projectInc, stats] = await Promise.all([
+            const [monthly, incCat, expCat, invCat, projectInc, stats, netWorth] = await Promise.all([
                 execute<MonthlySummary[]>('get_monthly_summary', { year: selectedYear, filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'income', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'expense', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'investment', filters: backendFilters }),
                 execute<ProjectIncomeSummary[]>('get_project_income_report', { year: selectedYear }),
                 execute<OverallStats>('get_overall_stats', { filters: backendFilters }),
+                execute<NetWorthPoint[]>('get_net_worth_trend'),
             ]);
 
             setMonthlySummary(monthly);
@@ -135,6 +144,7 @@ export default function Reports() {
             setInvestmentCategories(invCat);
             setProjectIncomeReport(projectInc);
             setOverallStats(stats);
+            setNetWorthTrend(netWorth);
         } catch (error) {
             console.error('Failed to load reports:', error);
         }
@@ -150,6 +160,60 @@ export default function Reports() {
             project_id: undefined,
         });
     };
+
+    const getSurvivalData = () => {
+        if (monthlySummary.length === 0 || netWorthTrend.length === 0) return { 
+            months: 0, total: 0, liquid: 0, burn: 0, colorClass: 'text-slate-400', borderClass: 'border-slate-500', bgClass: 'bg-slate-500/5', formatted: '0 Days' 
+        };
+        
+        const last2 = monthlySummary.slice(-2);
+        const burn = last2.reduce((sum, m) => sum + m.expense, 0) / Math.max(1, last2.length);
+        const currentLiquid = netWorthTrend[netWorthTrend.length - 1].cash;
+        const currentTotal = netWorthTrend[netWorthTrend.length - 1].total;
+        const runwayMonths = burn > 0 ? currentLiquid / burn : (currentLiquid > 0 ? Infinity : 0);
+
+        // Formatting logic
+        let formatted = '';
+        if (runwayMonths === Infinity) {
+            formatted = 'Infinite';
+        } else if (runwayMonths === 0) {
+            formatted = '0 Days';
+        } else {
+            const totalDays = Math.round(runwayMonths * 30.437);
+            const years = Math.floor(totalDays / 365);
+            const months = Math.floor((totalDays % 365) / 30.437);
+            const days = Math.round((totalDays % 365) % 30.437);
+
+            const parts = [];
+            if (years > 0) parts.push(`${years} ${years === 1 ? 'Year' : 'Years'}`);
+            if (months > 0) parts.push(`${months} ${months === 1 ? 'Month' : 'Months'}`);
+            if (days > 0 || parts.length === 0) parts.push(`${days} ${days === 1 ? 'Day' : 'Days'}`);
+            
+            formatted = parts.join(', ');
+        }
+
+        let colorClass = 'text-green-400';
+        let borderClass = 'border-green-500';
+        let bgClass = 'bg-green-500/5';
+
+        if (runwayMonths < 2) {
+            colorClass = 'text-red-400';
+            borderClass = 'border-red-500';
+            bgClass = 'bg-red-500/5';
+        } else if (runwayMonths < 6) {
+            colorClass = 'text-orange-400';
+            borderClass = 'border-orange-500';
+            bgClass = 'bg-orange-500/5';
+        } else if (runwayMonths < 12) {
+            colorClass = 'text-blue-400';
+            borderClass = 'border-blue-500';
+            bgClass = 'bg-blue-500/5';
+        }
+
+        return { months: runwayMonths, total: currentTotal, liquid: currentLiquid, burn, colorClass, borderClass, bgClass, formatted };
+    };
+
+    const survival = getSurvivalData();
 
     return (
         <div className="p-6">
@@ -210,41 +274,84 @@ export default function Reports() {
 
             {loading && <div className={darkTheme.loading}>Updating reports...</div>}
 
-            {/* Overall Stats */}
-            {overallStats && (
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                    <div className={darkTheme.card + " p-6"}>
-                        <div className="text-sm text-slate-400">Total Income</div>
-                        <div className="text-2xl font-bold text-green-400 mt-2">
-                            {formatCurrency(overallStats.total_income)}
+            {/* Key Health Metrics (Top Prioritized) */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                {/* Financial Runway */}
+                <div className={`${darkTheme.card} p-6 border-l-4 ${survival.borderClass} ${survival.bgClass}`}>
+                    <div className="flex items-center gap-2 text-slate-400 mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Survival Time</span>
+                        <div className="group relative">
+                            <span className="cursor-help text-slate-500 hover:text-blue-400 transition-colors text-[10px]">ⓘ</span>
+                            <div className="absolute top-full left-0 mt-2 w-48 p-2 bg-slate-800 text-[10px] text-slate-200 rounded shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 border border-slate-700 leading-tight">
+                                How long you can live off your **Liquid Assets only** (Bank/Cash) using only necessary expenses.
+                            </div>
                         </div>
                     </div>
-                    <div className={darkTheme.card + " p-6"}>
-                        <div className="text-sm text-slate-400">Total Expense</div>
-                        <div className="text-2xl font-bold text-red-400 mt-2">
-                            {formatCurrency(overallStats.total_expense)}
-                        </div>
+                    <div className={`text-2xl font-bold ${survival.colorClass} leading-tight`}>
+                        {survival.formatted}
                     </div>
-                    <div className={darkTheme.card + " p-6"}>
-                        <div className="text-sm text-slate-400">Investments</div>
-                        <div className="text-2xl font-bold text-cyan-400 mt-2">
-                            {formatCurrency(overallStats.total_invested)}
-                        </div>
-                    </div>
-                    <div className={darkTheme.card + " p-6"}>
-                        <div className="text-sm text-slate-400">Net Balance</div>
-                        <div className={`text-2xl font-bold mt-2 ${overallStats.net_balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {formatCurrency(overallStats.net_balance)}
-                        </div>
-                    </div>
-                    <div className={darkTheme.card + " p-6"}>
-                        <div className="text-sm text-slate-400">Transactions</div>
-                        <div className="text-2xl font-bold text-blue-400 mt-2">
-                            {overallStats.transaction_count}
-                        </div>
+                    <div className="text-[11px] text-slate-500 mt-2">
+                        Liquid Cash vs Consumption
                     </div>
                 </div>
-            )}
+
+                {/* Monthly Burn */}
+                <div className={darkTheme.card + " p-6 border-l-4 border-red-500"}>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monthly Burn Rate</div>
+                    <div className="text-2xl font-bold text-red-400">
+                        {(() => {
+                            const last2 = monthlySummary.slice(-2);
+                            const avgExpense = last2.reduce((sum, m) => sum + m.expense, 0) / Math.max(1, last2.length);
+                            return formatCurrency(avgExpense);
+                        })()}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-2 italic">Essential Lifestyle Spending</div>
+                </div>
+
+                {/* Savings Rate */}
+                <div className={darkTheme.card + " p-6 border-l-4 border-blue-500 bg-blue-500/5"}>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Savings Efficiency</div>
+                    <div className={`text-2xl font-bold ${overallStats?.net_balance && overallStats.total_income > 0 ? (overallStats.net_balance / overallStats.total_income * 100 > 20 ? 'text-green-400' : 'text-blue-400') : 'text-slate-100'}`}>
+                        {overallStats && overallStats.total_income > 0 ? ((overallStats.net_balance / overallStats.total_income) * 100).toFixed(2) + '%' : '0.00%'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-2">Portion of income "kept"</div>
+                </div>
+
+                {/* Net Worth Snapshot */}
+                <div className={darkTheme.card + " p-6 border-l-4 border-cyan-400"}>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Total Wealth</div>
+                    <div className="text-2xl font-bold text-cyan-400">
+                        {formatCurrency(netWorthTrend.length > 0 ? netWorthTrend[netWorthTrend.length - 1].total : 0)}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-2 italic">Liquid + Invested Capital</div>
+                </div>
+            </div>
+
+            {/* Standard Metrics Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {overallStats && (
+                    <>
+                        <div className={darkTheme.card + " p-4 bg-slate-800/20"}>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase">Total Income</div>
+                            <div className="text-lg font-bold text-green-400 mt-1">{formatCurrency(overallStats.total_income)}</div>
+                        </div>
+                        <div className={darkTheme.card + " p-4 bg-slate-800/20"}>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase">Total Expense</div>
+                            <div className="text-lg font-bold text-red-100 mt-1">{formatCurrency(overallStats.total_expense)}</div>
+                        </div>
+                        <div className={darkTheme.card + " p-4 bg-slate-800/20"}>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase">Total Invested</div>
+                            <div className="text-lg font-bold text-cyan-400 mt-1">{formatCurrency(overallStats.total_invested)}</div>
+                        </div>
+                        <div className={darkTheme.card + " p-4 bg-slate-800/20"}>
+                            <div className="text-[10px] text-slate-500 font-bold uppercase">Cash Remaining</div>
+                            <div className={`text-lg font-bold mt-1 ${overallStats.net_balance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                {formatCurrency(overallStats.net_balance)}
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
 
             {/* Monthly Trend — single stacked bar: expense + investment + savings = income */}
             <div className={darkTheme.card + " p-6 mb-6"}>
@@ -407,7 +514,7 @@ export default function Reports() {
                                     <td className="text-right py-2 px-3 text-red-400">{formatCurrency(m.expense)}</td>
                                     <td className="text-right py-2 px-3 text-cyan-400">{formatCurrency(m.investment)}</td>
                                     <td className={`text-right py-2 px-3 ${m.net >= 0 ? 'text-blue-400' : 'text-red-400'}`}>{formatCurrency(m.net)}</td>
-                                    <td className={`text-right py-2 px-3 ${rate >= 0 ? 'text-green-400' : 'text-red-400'}`}>{rate.toFixed(1)}%</td>
+                                    <td className={`text-right py-2 px-3 ${rate >= 0 ? 'text-green-400' : 'text-red-400'}`}>{rate.toFixed(2)}%</td>
                                 </tr>
                                 );
                             })}
@@ -557,7 +664,7 @@ export default function Reports() {
                                     <Tooltip
                                         content={({ active, payload, label }) => {
                                             if (active && payload && payload.length) {
-                                                return (
+                                                return (active && payload && payload.length) ? (
                                                     <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl">
                                                         <p className="text-slate-400 font-bold mb-2">{label}</p>
                                                         {payload.map((entry: any, index: number) => (
@@ -573,7 +680,7 @@ export default function Reports() {
                                                             </div>
                                                         ))}
                                                     </div>
-                                                );
+                                                ) : null;
                                             }
                                             return null;
                                         }}
@@ -640,6 +747,7 @@ export default function Reports() {
                 </div>
             )}
 
+
             {/* Tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className={darkTheme.card + " p-6"}>
@@ -678,21 +786,34 @@ export default function Reports() {
                     <div className="p-4 bg-slate-900/50 rounded-lg">
                         <div className="text-slate-400 mb-1">Savings Rate</div>
                         <div className={`font-bold ${overallStats?.net_balance && overallStats.total_income > 0 ? (overallStats.net_balance / overallStats.total_income * 100 > 0 ? 'text-green-400' : 'text-red-400') : 'text-slate-400'}`}>
-                            {overallStats && overallStats.total_income > 0 ? ((overallStats.net_balance / overallStats.total_income) * 100).toFixed(1) + '%' : '0%'}
+                            {overallStats && overallStats.total_income > 0 ? ((overallStats.net_balance / overallStats.total_income) * 100).toFixed(2) + '%' : '0.00%'}
                         </div>
                     </div>
                     <div className="p-4 bg-slate-900/50 rounded-lg">
                         <div className="text-slate-400 mb-1">Investment Rate</div>
                         <div className="text-cyan-400 font-bold">
                             {overallStats && overallStats.total_income > 0
-                                ? ((overallStats.total_invested / overallStats.total_income) * 100).toFixed(1) + '%'
-                                : '0%'}
+                                ? ((overallStats.total_invested / overallStats.total_income) * 100).toFixed(2) + '%'
+                                : '0.00%'}
                         </div>
                     </div>
                     <div className="p-4 bg-slate-900/50 rounded-lg">
-                        <div className="text-slate-400 mb-1">Avg Daily Spend</div>
-                        <div className="text-red-400 font-bold">
-                            {overallStats ? formatCurrency(overallStats.total_expense / 30) : '₹0'}
+                        <div className="flex items-center gap-2 text-slate-400 mb-1">
+                            <span>Financial Runway</span>
+                            <div className="group relative">
+                                <span className="cursor-help text-slate-500 hover:text-blue-400 transition-colors text-[10px]">ⓘ</span>
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-[10px] text-slate-200 rounded shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 border border-slate-700 leading-tight">
+                                    Time you can live off your net worth using only necessary expenses (investments stopped).
+                                </div>
+                            </div>
+                        </div>
+                        <div className={`font-bold ${survival.colorClass}`}>
+                            <div className="text-base">{survival.formatted}</div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] font-medium text-slate-500 uppercase tracking-tighter">
+                                <span>Liq: <span className="text-slate-400">₹{(survival.liquid / 1000).toFixed(1)}k</span></span>
+                                <span>Total: <span className="text-slate-400">₹{(survival.total / 1000).toFixed(1)}k</span></span>
+                                <span>Burn: <span className="text-slate-400">₹{(survival.burn / 1000).toFixed(1)}k</span></span>
+                            </div>
                         </div>
                     </div>
                 </div>

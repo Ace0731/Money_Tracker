@@ -60,6 +60,21 @@ pub struct ReportFilters {
     pub project_id: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NetWorthPoint {
+    pub month: String,
+    pub cash: f64,
+    pub invested: f64,
+    pub total: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AssetAllocation {
+    pub class: String,
+    pub value: f64,
+    pub percentage: f64,
+}
+
 fn apply_filters(query: &mut String, filters: &ReportFilters, params: &mut Vec<rusqlite::types::Value>) {
     if let Some(start) = &filters.start_date {
         query.push_str(" AND date >= ?");
@@ -92,7 +107,7 @@ pub fn get_monthly_summary(
         SELECT 
             strftime('%Y-%m', t.date) as month,
             SUM(CASE WHEN t.direction = 'income' THEN t.amount ELSE 0 END) as income,
-            SUM(CASE WHEN t.direction = 'expense' THEN t.amount ELSE 0 END) as expense,
+            SUM(CASE WHEN t.direction = 'expense' AND COALESCE(c.is_investment, 0) = 0 THEN t.amount ELSE 0 END) as expense,
             SUM(CASE WHEN COALESCE(c.is_investment, 0) = 1 THEN t.amount ELSE 0 END) as investment
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
@@ -236,9 +251,10 @@ pub fn get_overall_stats(db: State<DbConnection>, filters: ReportFilters) -> Res
     let mut query = String::from("
         SELECT 
             SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) as total_income,
-            SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END) as total_expense,
+            SUM(CASE WHEN direction = 'expense' AND COALESCE(c.is_investment, 0) = 0 THEN t.amount ELSE 0 END) as total_expense,
             COUNT(*) as transaction_count
-        FROM transactions
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
         WHERE 1=1
     ");
     
@@ -381,4 +397,115 @@ pub fn get_project_income_report(
     }
     
     Ok(report)
+}
+
+#[tauri::command]
+pub fn get_net_worth_trend(db: State<DbConnection>) -> Result<Vec<NetWorthPoint>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // 1. Get monthly aggregates of Income, Expense, and Investments
+    let mut stmt = conn.prepare("
+        SELECT 
+            strftime('%Y-%m', t.date) as month,
+            SUM(CASE WHEN t.direction = 'income' THEN t.amount ELSE 0 END) as income,
+            SUM(CASE WHEN t.direction = 'expense' AND COALESCE(c.is_investment, 0) = 0 THEN t.amount ELSE 0 END) as expense,
+            SUM(CASE WHEN COALESCE(c.is_investment, 0) = 1 THEN t.amount ELSE 0 END) as investment
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        GROUP BY month
+        ORDER BY month
+    ").map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, f64>(1)?,
+            row.get::<_, f64>(2)?,
+            row.get::<_, f64>(3)?,
+        ))
+    }).map_err(|e| e.to_string())?;
+
+    let initial_cash: f64 = conn.query_row("SELECT COALESCE(SUM(opening_balance), 0) FROM accounts WHERE LOWER(type) != 'investment'", [], |r| r.get(0)).unwrap_or(0.0);
+    let initial_invested: f64 = conn.query_row("SELECT COALESCE(SUM(opening_balance), 0) FROM accounts WHERE LOWER(type) = 'investment'", [], |r| r.get(0)).unwrap_or(0.0);
+
+    let mut trend = Vec::new();
+    let mut cumulative_income = 0.0;
+    let mut cumulative_expense = 0.0;
+    let mut cumulative_invested = 0.0;
+
+    let initial_wealth = initial_cash + initial_invested;
+
+    for row in rows {
+        let (month, income, expense, investment) = row.map_err(|e| e.to_string())?;
+        
+        cumulative_income += income;
+        cumulative_expense += expense;
+        cumulative_invested += investment;
+
+        // Total wealth = Baseline + Cumulative Net Flow
+        let total_wealth = initial_wealth + (cumulative_income - cumulative_expense);
+        // Total invested = Baseline Invested + Cumulative Transactions
+        let current_invested = initial_invested + cumulative_invested;
+        // Cash = Total Wealth - Total Invested
+        let cash = total_wealth - current_invested;
+
+        trend.push(NetWorthPoint {
+            month,
+            cash: (cash * 100.0).round() / 100.0,
+            invested: (current_invested * 100.0).round() / 100.0,
+            total: (total_wealth * 100.0).round() / 100.0,
+        });
+    }
+
+    Ok(trend)
+}
+
+#[tauri::command]
+pub fn get_asset_allocation(db: State<DbConnection>) -> Result<Vec<AssetAllocation>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Get investment valuation grouped by type
+    let mut stmt = conn.prepare("
+        SELECT type, SUM(COALESCE(current_price * units, principal_amount, 0)) as value
+        FROM investments
+        GROUP BY type
+        HAVING value > 0
+    ").map_err(|e| e.to_string())?;
+
+    let investment_types = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+    }).map_err(|e| e.to_string())?;
+
+    let mut allocations = Vec::new();
+    let mut total_value = 0.0;
+
+    for type_row in investment_types {
+        let (inv_type, value) = type_row.map_err(|e| e.to_string())?;
+        total_value += value;
+        allocations.push((inv_type, value));
+    }
+
+    // Add Liquid Cash as an asset class
+    let cash_balance: f64 = conn.query_row("
+        SELECT 
+            SUM(CASE WHEN direction = 'income' THEN amount ELSE 0 END) -
+            SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END)
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+    ", [], |r| r.get(0)).unwrap_or(0.0);
+
+    if cash_balance > 0.0 {
+        total_value += cash_balance;
+        allocations.push(("Cash".to_string(), cash_balance));
+    }
+
+    let result = allocations.into_iter().map(|(class, value)| {
+        AssetAllocation {
+            class,
+            value: (value * 100.0).round() / 100.0,
+            percentage: if total_value > 0.0 { (value / total_value * 100.0).round() } else { 0.0 },
+        }
+    }).collect();
+
+    Ok(result)
 }

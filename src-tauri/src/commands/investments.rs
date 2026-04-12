@@ -206,9 +206,9 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 |r| r.get(0)
             ).unwrap_or(0.0);
 
-            let total_expenses = (total_expenses_tx + total_expenses_lots);
+            let total_expenses = total_expenses_tx + total_expenses_lots;
             // Total invested capital is lots cost + manual transfers
-            let total_invested_capital = (total_invested + total_transfers);
+            let total_invested_capital = total_invested + total_transfers;
             
             let avg_buy_price = if total_units > 0.0 { total_invested / total_units } else { 0.0 };
 
@@ -443,14 +443,14 @@ pub fn delete_investment_lot(db: State<DbConnection>, id: i64) -> Result<(), Str
 }
 
 #[tauri::command]
-pub async fn sync_investment_prices(db: State<'_, DbConnection>) -> Result<(), String> {
+pub async fn sync_investment_prices(db: State<'_, DbConnection>, force: bool) -> Result<(), String> {
     let investments = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn.prepare("SELECT id, type, provider_symbol FROM investments WHERE provider_symbol IS NOT NULL AND provider_symbol != ''")
+        let mut stmt = conn.prepare("SELECT id, type, provider_symbol, last_updated_at FROM investments WHERE provider_symbol IS NOT NULL AND provider_symbol != ''")
             .map_err(|e| e.to_string())?;
         
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))
         }).map_err(|e| e.to_string())?;
         
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
@@ -461,7 +461,25 @@ pub async fn sync_investment_prices(db: State<'_, DbConnection>) -> Result<(), S
         .build()
         .map_err(|e| e.to_string())?;
 
-    for (id, inv_type, symbol) in investments {
+    let now_dt = chrono::Local::now();
+    let cooldown_seconds = 24 * 60 * 60;
+
+    for (id, inv_type, symbol, last_updated) in investments {
+        // Skip if not forced and updated within last 24h
+        if !force {
+            if let Some(last_ts) = last_updated {
+                use chrono::TimeZone;
+                if let Ok(last_naive) = chrono::NaiveDateTime::parse_from_str(&last_ts, "%Y-%m-%d %H:%M:%S") {
+                    if let Some(last_local) = chrono::Local.from_local_datetime(&last_naive).single() {
+                        let diff = now_dt.signed_duration_since(last_local);
+                        if diff.num_seconds() < cooldown_seconds {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
         let mut new_price: Option<f64> = None;
 
         if inv_type == "mf" {

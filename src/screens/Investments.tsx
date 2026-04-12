@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
 import type { Investment, InvestmentSummary, Account, PlatformBalance, InvestmentLot } from '../types';
-import { formatCurrency, formatUnits } from '../utils/formatters';
+import { formatCurrency, formatUnits, formatRelativeTime } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import Swal from 'sweetalert2';
@@ -55,7 +55,7 @@ export default function Investments() {
     const loadData = async (sync = false) => {
         try {
             if (sync) {
-                await execute('sync_investment_prices');
+                await execute('sync_investment_prices', { force: false });
             }
             const [sumData, accData, platData, benchReport] = await Promise.all([
                 execute<InvestmentSummary[]>('get_investments_summary'),
@@ -215,7 +215,7 @@ export default function Investments() {
 
     const handleSync = async () => {
         try {
-            await execute('sync_investment_prices');
+            await execute('sync_investment_prices', { force: true });
             await loadData();
         } catch (error) {
             console.error('Failed to sync prices:', error);
@@ -641,7 +641,7 @@ export default function Investments() {
                                                         </span>
                                                     </h3>
                                                     <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                        {s.investment.investment_type} • {s.account_name}
+                                                        {s.investment.investment_type} • {s.account_name} • <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
@@ -689,7 +689,7 @@ export default function Investments() {
                                             <div>
                                                 <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
                                                 <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                    {s.investment.investment_type} • {s.account_name}
+                                                    {s.investment.investment_type} • {s.account_name} • <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>
                                                 </div>
                                             </div>
                                             <div className="flex gap-2">
@@ -772,6 +772,8 @@ export default function Investments() {
                                                     <div className="text-xs text-slate-400 uppercase tracking-wider">
                                                         {s.investment.investment_type.toUpperCase()} • {s.account_name}
                                                         {s.investment.bank_name && ` • ${s.investment.bank_name}`}
+                                                        {s.investment.last_updated_at && ` • `}
+                                                        {s.investment.last_updated_at && <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>}
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">

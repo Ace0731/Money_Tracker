@@ -85,6 +85,8 @@ fn main() {
             update_category_hour,
             delete_category_hour,
             get_income_breakdown,
+            get_net_worth_trend,
+            get_asset_allocation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
