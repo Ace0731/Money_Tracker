@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Project, Client, TimeLog, ProjectPayment } from '../types';
+import type { Project, Client, Category, TimeLog, ProjectPayment } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
@@ -9,6 +9,7 @@ export default function Projects() {
     const { execute, loading } = useDatabase();
     const [projects, setProjects] = useState<Project[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
     const [activeTab, setActiveTab] = useState<'projects' | 'clients'>('projects');
 
     // Client Form State
@@ -24,6 +25,7 @@ export default function Projects() {
     const [formData, setFormData] = useState<Project>({
         name: '',
         client_id: undefined,
+        category_id: undefined,
         expected_amount: undefined,
         hourly_rate: undefined,
         start_date: '',
@@ -55,6 +57,7 @@ export default function Projects() {
     useEffect(() => {
         loadProjects();
         loadClients();
+        loadCategories();
     }, []);
 
     const loadProjects = async () => {
@@ -72,6 +75,15 @@ export default function Projects() {
             setClients(data);
         } catch (error) {
             console.error('Failed to load clients:', error);
+        }
+    };
+
+    const loadCategories = async () => {
+        try {
+            const data = await execute<Category[]>('get_categories');
+            setCategories(data.filter(c => c.kind === 'income'));
+        } catch (error) {
+            console.error('Failed to load categories:', error);
         }
     };
 
@@ -110,6 +122,7 @@ export default function Projects() {
             setFormData({
                 name: '',
                 client_id: undefined,
+                category_id: undefined,
                 expected_amount: undefined,
                 hourly_rate: undefined,
                 start_date: '',
@@ -236,6 +249,11 @@ export default function Projects() {
         return client?.name || 'No Client';
     };
 
+    const getCategoryName = (catId?: number) => {
+        const category = categories.find(c => c.id === catId);
+        return category?.name || '';
+    };
+
     return (
         <div className="p-6">
             <div className="flex justify-between items-center mb-6">
@@ -259,7 +277,7 @@ export default function Projects() {
                 {activeTab === 'projects' ? (
                     <button
                         onClick={() => {
-                            setFormData({ name: '', client_id: undefined, expected_amount: undefined, hourly_rate: undefined, start_date: '', end_date: '', notes: '', completed: false, status: 'active' });
+                            setFormData({ name: '', client_id: undefined, category_id: undefined, expected_amount: undefined, hourly_rate: undefined, start_date: '', end_date: '', notes: '', completed: false, status: 'active' });
                             setShowForm(true);
                         }}
                         className={darkTheme.btnPrimary}
@@ -308,7 +326,14 @@ export default function Projects() {
                                     )}
                                 </div>
 
-                                <p className="text-sm text-blue-400 mb-4">{getClientName(project.client_id)}</p>
+                                <div className="flex justify-between items-center mb-4">
+                                    <p className="text-sm text-blue-400">{getClientName(project.client_id)}</p>
+                                    {project.category_id && (
+                                        <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 font-bold uppercase tracking-widest">
+                                            {getCategoryName(project.category_id)}
+                                        </span>
+                                    )}
+                                </div>
 
                                 <div className="grid grid-cols-2 gap-4 mb-4 p-3 bg-slate-700/50 rounded-lg">
                                     <div>
@@ -347,9 +372,20 @@ export default function Projects() {
                                         ⏱️ {project.logged_hours || 0}h Logged
                                     </span>
                                     {project.hourly_rate ? (
-                                        <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
-                                            Target: {formatCurrency(project.hourly_rate)}/hr
-                                        </span>
+                                        <div className="flex gap-2">
+                                            <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
+                                                Target: {formatCurrency(project.hourly_rate)}/hr
+                                            </span>
+                                            {project.logged_hours && project.logged_hours > 0 ? (
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-mono ${
+                                                    ((project.received_amount || 0) / project.logged_hours) >= (project.hourly_rate || 0)
+                                                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                                    : 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                                                }`}>
+                                                    Actual: {formatCurrency((project.received_amount || 0) / project.logged_hours)}/hr
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     ) : null}
                                 </div>
 
@@ -547,18 +583,34 @@ export default function Projects() {
                                 />
                             </div>
 
-                            <div>
-                                <label className={darkTheme.label}>Client</label>
-                                <select
-                                    value={formData.client_id || ''}
-                                    onChange={(e) => setFormData({ ...formData, client_id: e.target.value ? parseInt(e.target.value) : undefined })}
-                                    className={darkTheme.select}
-                                >
-                                    <option value="">No Client</option>
-                                    {clients.map(client => (
-                                        <option key={client.id} value={client.id}>{client.name}</option>
-                                    ))}
-                                </select>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={darkTheme.label}>Client</label>
+                                    <select
+                                        value={formData.client_id || ''}
+                                        onChange={(e) => setFormData({ ...formData, client_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                        className={darkTheme.select}
+                                    >
+                                        <option value="">No Client</option>
+                                        {clients.map(client => (
+                                            <option key={client.id} value={client.id}>{client.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={darkTheme.label}>Default Category (For Breakdown) *</label>
+                                    <select
+                                        value={formData.category_id || ''}
+                                        onChange={(e) => setFormData({ ...formData, category_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                        className={darkTheme.select}
+                                        required
+                                    >
+                                        <option value="">Select Category</option>
+                                        {categories.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

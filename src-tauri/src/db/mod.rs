@@ -487,7 +487,10 @@ pub fn initialize_database() -> Result<DbConnection> {
     // Migration: hourly_rate = daily_rate / 8.0
     let _ = conn.execute("UPDATE projects SET hourly_rate = daily_rate / 8.0 WHERE hourly_rate = 0.0 AND daily_rate > 0", []);
 
-    // 38. Create category_hours table for manual hour entry
+    // 39. Add category_id to projects
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN category_id INTEGER REFERENCES categories(id)", []);
+    
+    // 40. Create category_hours table for manual hour entry
     conn.execute(
         "CREATE TABLE IF NOT EXISTS category_hours (
             id INTEGER PRIMARY KEY,

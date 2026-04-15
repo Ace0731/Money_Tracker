@@ -126,6 +126,7 @@ export interface Project {
     id?: number;
     name: string;
     client_id?: number;
+    category_id?: number;
     expected_amount?: number;
     hourly_rate?: number;
     start_date?: string;

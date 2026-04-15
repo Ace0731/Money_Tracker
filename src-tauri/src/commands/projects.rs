@@ -8,6 +8,7 @@ pub struct Project {
     pub id: Option<i64>,
     pub name: String,
     pub client_id: Option<i64>,
+    pub category_id: Option<i64>,
     pub expected_amount: Option<f64>,
     pub hourly_rate: Option<f64>,
     pub start_date: Option<String>,
@@ -52,7 +53,7 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
     let mut stmt = conn
         .prepare("
             SELECT 
-                p.id, p.name, p.client_id, p.expected_amount, p.hourly_rate, p.start_date, p.end_date, p.notes, p.completed, p.status,
+                p.id, p.name, p.client_id, p.category_id, p.expected_amount, p.hourly_rate, p.start_date, p.end_date, p.notes, p.completed, p.status,
                 p.srs_internal_link, p.srs_client_approved_link, p.srs_status, p.srs_approved_date,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'income') as received,
                 (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = p.id AND direction = 'expense') as spent,
@@ -68,20 +69,21 @@ pub fn get_projects(db: State<DbConnection>) -> Result<Vec<Project>, String> {
                 id: Some(row.get(0)?),
                 name: row.get(1)?,
                 client_id: row.get(2)?,
-                expected_amount: row.get(3)?,
-                hourly_rate: row.get(4)?,
-                start_date: row.get(5)?,
-                end_date: row.get(6)?,
-                notes: row.get(7)?,
-                completed: row.get(8)?,
-                status: row.get(9)?,
-                srs_internal_link: row.get(10)?,
-                srs_client_approved_link: row.get(11)?,
-                srs_status: row.get(12)?,
-                srs_approved_date: row.get(13)?,
-                received_amount: Some(row.get(14)?),
-                spent_amount: Some(row.get(15)?),
-                logged_hours: Some(row.get(16)?),
+                category_id: row.get(3)?,
+                expected_amount: row.get(4)?,
+                hourly_rate: row.get(5)?,
+                start_date: row.get(6)?,
+                end_date: row.get(7)?,
+                notes: row.get(8)?,
+                completed: row.get(9)?,
+                status: row.get(10)?,
+                srs_internal_link: row.get(11)?,
+                srs_client_approved_link: row.get(12)?,
+                srs_status: row.get(13)?,
+                srs_approved_date: row.get(14)?,
+                received_amount: Some(row.get(15)?),
+                spent_amount: Some(row.get(16)?),
+                logged_hours: Some(row.get(17)?),
             })
         })
         .map_err(|e| e.to_string())?
@@ -99,12 +101,13 @@ pub fn create_project(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
-        "INSERT INTO projects (name, client_id, expected_amount, hourly_rate, start_date, end_date, notes, completed, status, 
+        "INSERT INTO projects (name, client_id, category_id, expected_amount, hourly_rate, start_date, end_date, notes, completed, status, 
          srs_internal_link, srs_client_approved_link, srs_status, srs_approved_date) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             project.name,
             project.client_id,
+            project.category_id,
             project.expected_amount,
             project.hourly_rate.unwrap_or(0.0),
             project.start_date,
@@ -133,12 +136,13 @@ pub fn update_project(
     let id = project.id.ok_or("Project ID is required")?;
     
     conn.execute(
-        "UPDATE projects SET name = ?1, client_id = ?2, expected_amount = ?3, hourly_rate = ?4, start_date = ?5, 
-         end_date = ?6, notes = ?7, completed = ?8, status = ?9, srs_internal_link = ?10, 
-         srs_client_approved_link = ?11, srs_status = ?12, srs_approved_date = ?13 WHERE id = ?14",
+        "UPDATE projects SET name = ?1, client_id = ?2, category_id = ?3, expected_amount = ?4, hourly_rate = ?5, start_date = ?6, 
+         end_date = ?7, notes = ?8, completed = ?9, status = ?10, srs_internal_link = ?11, 
+         srs_client_approved_link = ?12, srs_status = ?13, srs_approved_date = ?14 WHERE id = ?15",
         params![
             project.name,
             project.client_id,
+            project.category_id,
             project.expected_amount,
             project.hourly_rate.unwrap_or(0.0),
             project.start_date,

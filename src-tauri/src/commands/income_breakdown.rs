@@ -110,25 +110,32 @@ pub fn get_income_breakdown(
     for (cat_id, cat_name) in categories {
         // 2. Get manual hours for this category
         let manual_hours: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(hours), 0) FROM category_hours WHERE category_id = ?1 AND strftime('%Y-%m', date) = ?2",
+            "SELECT COALESCE(SUM(hours), 0) FROM category_hours WHERE category_id = ?1 AND substr(date, 1, 7) = ?2",
             params![cat_id, month],
             |row| row.get(0)
         ).unwrap_or(0.0);
 
         // 3. Get income from transactions for this category (non-project)
         let manual_income: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE category_id = ?1 AND project_id IS NULL AND direction = 'income' AND strftime('%Y-%m', date) = ?2",
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE category_id = ?1 AND project_id IS NULL AND direction = 'income' AND substr(date, 1, 7) = ?2",
             params![cat_id, month],
             |row| row.get(0)
         ).unwrap_or(0.0);
 
         // 4. Get projects related to this category for this month
-        // A project is "related" if there are transactions for it with this category id this month
+        // A project is \"related\" if:
+        // a) It is explicitly linked to this category AND active during this month (based on start/end dates)
+        // b) There are transactions for it with this category id this month (manual override/fallback)
         let mut proj_stmt = conn.prepare("
             SELECT DISTINCT p.id, p.name 
             FROM projects p
-            JOIN transactions t ON t.project_id = p.id
-            WHERE t.category_id = ?1 AND strftime('%Y-%m', t.date) = ?2
+            LEFT JOIN transactions t ON t.project_id = p.id AND t.category_id = ?1 AND substr(t.date, 1, 7) = ?2
+            WHERE (
+                p.category_id = ?1 AND 
+                (p.start_date IS NULL OR p.start_date = '' OR substr(p.start_date, 1, 7) <= ?2) AND
+                (p.end_date IS NULL OR p.end_date = '' OR substr(p.end_date, 1, 7) >= ?2)
+            )
+            OR (t.project_id IS NOT NULL)
         ").map_err(|e| e.to_string())?;
         
         let related_projects: Vec<(i64, String)> = proj_stmt.query_map(params![cat_id, month], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -142,13 +149,13 @@ pub fn get_income_breakdown(
 
         for (p_id, p_name) in related_projects {
             let p_income: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = ?1 AND category_id = ?2 AND direction = 'income' AND strftime('%Y-%m', date) = ?3",
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = ?1 AND category_id = ?2 AND direction = 'income' AND substr(date, 1, 7) = ?3",
                 params![p_id, cat_id, month],
                 |row| row.get(0)
             ).unwrap_or(0.0);
 
             let p_hours: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = ?1 AND strftime('%Y-%m', date) = ?2",
+                "SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = ?1 AND substr(date, 1, 7) = ?2",
                 params![p_id, month],
                 |row| row.get(0)
             ).unwrap_or(0.0);
