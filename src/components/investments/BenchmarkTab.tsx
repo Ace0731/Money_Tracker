@@ -172,16 +172,38 @@ export default function BenchmarkTab({ report, refreshData }: { report: any, ref
                                             <div className="text-sm text-slate-300">
                                                 By {new Date(new Date().setMonth(new Date().getMonth() + monthsToMatch)).toLocaleString('default', { month: 'long', year: 'numeric' })}
                                             </div>
+                                            <div className="mt-3 text-[10px] text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">
+                                                At your current trend of {formatCurrency(bestTrend)}/mo
+                                            </div>
                                             <div className="mt-4 w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
                                                 <div className="bg-blue-400 h-full w-2/3 animate-pulse" />
                                             </div>
                                         </>
-                                    ) : (
-                                        <div className="text-center">
-                                            <div className="text-red-400 font-bold mb-1">Gap is Widening</div>
-                                            <p className="text-xs text-slate-500 max-w-[200px]">You need to invest at least {formatCurrency(bench)} per month + recovery amount to close the gap.</p>
-                                        </div>
-                                    )}
+                                    ) : (() => {
+                                        // Even if trend < benchmark, show parity date if user meets the target
+                                        const monthsAtTarget = Math.ceil(deficit / bench);
+                                        const parityDate = new Date();
+                                        parityDate.setMonth(parityDate.getMonth() + monthsAtTarget);
+                                        return (
+                                            <>
+                                                <div className="text-4xl font-black text-amber-400 mb-2">
+                                                    {monthsAtTarget} <span className="text-lg">Months</span>
+                                                </div>
+                                                <div className="text-sm text-slate-300">
+                                                    By {parityDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                                </div>
+                                                <div className="mt-3 text-[10px] text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full text-center">
+                                                    Requires hitting {formatCurrency(bench)}/mo target
+                                                </div>
+                                                <div className="mt-2 text-[10px] text-slate-500 text-center max-w-[180px]">
+                                                    Current trend ({formatCurrency(bestTrend)}/mo) is below target
+                                                </div>
+                                                <div className="mt-3 w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                                                    <div className="bg-amber-400 h-full" style={{ width: `${Math.min(100, (bestTrend / bench) * 100)}%` }} />
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         );
