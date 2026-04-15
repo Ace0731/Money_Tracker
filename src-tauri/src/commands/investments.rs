@@ -695,14 +695,31 @@ pub fn get_investment_benchmark_report(db: State<DbConnection>) -> Result<Invest
         if target_months.len() > 120 { break; } // safety fallback
     }
     
-    // 3. Query group-by amounts from actual investment lots
+    // 3. Query actual invested amounts:
+    //    Source A: investment_lots (formal lot entries)
+    //    Source B: transactions whose category is type='investment' (covers category-tagged transfers)
     let mut stmt = conn.prepare("
-        SELECT strftime('%Y-%m', il.date) as mth, SUM(
-            CASE WHEN il.lot_type = 'sell' THEN -(il.quantity * il.price_per_unit) ELSE (il.quantity * il.price_per_unit + il.charges) END
+        SELECT mth, SUM(total) FROM (
+            -- Source A: investment lots
+            SELECT strftime('%Y-%m', il.date) as mth,
+                   SUM(CASE WHEN il.lot_type = 'sell' THEN -(il.quantity * il.price_per_unit)
+                            ELSE (il.quantity * il.price_per_unit + il.charges) END) as total
+            FROM investment_lots il
+            JOIN investments i ON il.investment_id = i.id
+            WHERE strftime('%Y-%m', il.date) >= ?1 AND i.type != 'pf'
+            GROUP BY mth
+
+            UNION ALL
+
+            -- Source B: transactions tagged with an investment category (is_investment flag)
+            SELECT strftime('%Y-%m', t.date) as mth,
+                   ROUND(SUM(t.amount), 2) as total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE COALESCE(c.is_investment, 0) = 1
+              AND strftime('%Y-%m', t.date) >= ?1
+            GROUP BY mth
         )
-        FROM investment_lots il
-        JOIN investments i ON il.investment_id = i.id
-        WHERE strftime('%Y-%m', il.date) >= ?1 AND i.type != 'pf'
         GROUP BY mth
     ").map_err(|e| e.to_string())?;
     

@@ -5,12 +5,7 @@ import type { TransactionWithDetails, TransactionBalances } from '../types/trans
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
-import TimelineView from '../components/transactions/TimelineView';
 
-const MONTH_NAMES = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December'
-];
 
 export default function Transactions() {
     const { execute, loading } = useDatabase();
@@ -23,12 +18,6 @@ export default function Transactions() {
     const [showBalances, setShowBalances] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [viewOnly, setViewOnly] = useState(false);
-
-    // Tab + timeline month state
-    const today = new Date();
-    const [activeTab, setActiveTab] = useState<'list' | 'timeline'>('list');
-    const [timelineMonth, setTimelineMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
-    const [timelineTransactions, setTimelineTransactions] = useState<TransactionWithDetails[]>([]);
 
     const [filters, setFilters] = useState<{
         start_date: string;
@@ -95,42 +84,6 @@ export default function Transactions() {
         }
         loadReferenceData();
     }, [filters]);
-
-    // Load timeline transactions whenever the timeline month changes
-    useEffect(() => {
-        if (activeTab === 'timeline') {
-            loadTimelineTransactions();
-        }
-    }, [activeTab, timelineMonth]);
-
-    const loadTimelineTransactions = async () => {
-        const { year, month } = timelineMonth;
-        const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-        const lastDayNum = new Date(year, month + 1, 0).getDate();
-        const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
-        try {
-            const data = await execute<TransactionWithDetails[]>('get_transactions', {
-                filters: { start_date: firstDay, end_date: lastDay, direction: '' }
-            });
-            setTimelineTransactions(data);
-        } catch (error) {
-            console.error('Failed to load timeline transactions:', error);
-        }
-    };
-
-    const prevMonth = () => {
-        setTimelineMonth(prev => {
-            if (prev.month === 0) return { year: prev.year - 1, month: 11 };
-            return { ...prev, month: prev.month - 1 };
-        });
-    };
-
-    const nextMonth = () => {
-        setTimelineMonth(prev => {
-            if (prev.month === 11) return { year: prev.year + 1, month: 0 };
-            return { ...prev, month: prev.month + 1 };
-        });
-    };
 
     const loadTransactions = async () => {
         try {
@@ -246,28 +199,6 @@ export default function Transactions() {
         setShowForm(true);
     };
 
-    const handleView = async (transaction: TransactionWithDetails) => {
-        const tagIds = await execute<number[]>('get_transaction_tags', { transactionId: transaction.id });
-
-        setFormData({
-            id: transaction.id,
-            date: transaction.date,
-            amount: transaction.amount,
-            direction: transaction.direction,
-            from_account_id: transaction.from_account_id,
-            to_account_id: transaction.to_account_id,
-            category_id: transaction.category_id,
-            client_id: transaction.client_id,
-            project_id: transaction.project_id,
-            investment_id: transaction.investment_id,
-            goal_id: transaction.goal_id,
-            notes: transaction.notes,
-        });
-        setSelectedTags(tagIds);
-        setViewOnly(true);
-        setShowForm(true);
-    };
-
     const resetForm = () => {
         setFormData({
             date: new Date().toISOString().split('T')[0],
@@ -306,96 +237,7 @@ export default function Transactions() {
                 </button>
             </div>
 
-            {/* ── Tab Bar ── */}
-            <div className="flex gap-2 mb-6">
-                {(['list', 'timeline'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        style={{
-                            padding: '8px 20px',
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            transition: 'all 0.2s',
-                            border: activeTab === tab
-                                ? '1px solid rgba(245,158,11,0.6)'
-                                : '1px solid rgba(100,116,139,0.3)',
-                            background: activeTab === tab
-                                ? 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.1))'
-                                : 'rgba(30,41,59,0.6)',
-                            color: activeTab === tab ? '#fbbf24' : '#94a3b8',
-                            cursor: 'pointer',
-                            boxShadow: activeTab === tab ? '0 0 12px rgba(245,158,11,0.2)' : 'none',
-                        }}
-                    >
-                        {tab === 'list' ? '📋 List' : '🌿 Timeline'}
-                    </button>
-                ))}
-            </div>
 
-            {/* ── Month Navigator (Timeline only) ── */}
-            {activeTab === 'timeline' && (
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '20px',
-                    marginBottom: '28px',
-                    padding: '12px 24px',
-                    background: 'rgba(15,23,42,0.8)',
-                    border: '1px solid rgba(245,158,11,0.25)',
-                    borderRadius: '12px',
-                }}>
-                    <button
-                        onClick={prevMonth}
-                        style={{
-                            background: 'rgba(245,158,11,0.12)',
-                            border: '1px solid rgba(245,158,11,0.3)',
-                            borderRadius: '8px',
-                            color: '#fbbf24',
-                            padding: '6px 16px',
-                            cursor: 'pointer',
-                            fontSize: '18px',
-                            transition: 'all 0.15s',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.25)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.12)')}
-                    >
-                        ◀
-                    </button>
-                    <div style={{ textAlign: 'center' }}>
-                        <div style={{
-                            fontSize: '20px',
-                            fontWeight: 800,
-                            color: '#fbbf24',
-                            letterSpacing: '0.05em',
-                        }}>
-                            {MONTH_NAMES[timelineMonth.month]} {timelineMonth.year}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', letterSpacing: '0.12em' }}>
-                            TIMELINE · VARIANT RECORD
-                        </div>
-                    </div>
-                    <button
-                        onClick={nextMonth}
-                        style={{
-                            background: 'rgba(245,158,11,0.12)',
-                            border: '1px solid rgba(245,158,11,0.3)',
-                            borderRadius: '8px',
-                            color: '#fbbf24',
-                            padding: '6px 16px',
-                            cursor: 'pointer',
-                            fontSize: '18px',
-                            transition: 'all 0.15s',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.25)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.12)')}
-                    >
-                        ▶
-                    </button>
-                </div>
-            )}
 
             {/* Balance Table */}
             <div className={darkTheme.card + " mb-6 overflow-hidden"}>
@@ -491,9 +333,8 @@ export default function Transactions() {
                 )}
             </div>
 
-            {/* Filters — list tab only */}
-            {activeTab === 'list' && (
-                <div className={darkTheme.card + " p-4 mb-6"}>
+            {/* Filters */}
+            <div className={darkTheme.card + " p-4 mb-6"}>
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div className="md:col-span-1">
                             <label className={darkTheme.label}>Start Date</label>
@@ -552,22 +393,13 @@ export default function Transactions() {
                                 ))}
                             </select>
                         </div>
-                    </div>
                 </div>
-            )}
+            </div>
 
             {loading && <div className={darkTheme.loading}>Loading...</div>}
 
-            {/* ── Timeline View ── */}
-            {activeTab === 'timeline' && (
-                <TimelineView
-                    transactions={timelineTransactions}
-                    onViewTransaction={handleView}
-                />
-            )}
 
-            {/* Transactions Table — list tab only */}
-            {activeTab === 'list' && (
+            {/* Transactions Table */}
             <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
                 <table className={darkTheme.table}>
                     <thead className={darkTheme.tableHeader}>
@@ -639,7 +471,6 @@ export default function Transactions() {
                     </div>
                 )}
             </div>
-            )}
 
             {/* Transaction Form Modal */}
             {showForm && (

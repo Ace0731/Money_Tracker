@@ -13,7 +13,6 @@ import {
     fetchNPSNAV,
     getDaysRemaining
 } from '../utils/investmentCalculations';
-import BenchmarkTab from '../components/investments/BenchmarkTab';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
@@ -22,8 +21,7 @@ export default function Investments() {
     const [summaries, setSummaries] = useState<InvestmentSummary[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [platformBalances, setPlatformBalances] = useState<PlatformBalance[]>([]);
-    const [viewMode, setViewMode] = useState<'portfolio' | 'benchmark'>('portfolio');
-    const [benchmarkReport, setBenchmarkReport] = useState<any>(null);
+
     const [showLotForm, setShowLotForm] = useState(false);
     const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf' | 'pf'>('all');
     const [timePeriod, setTimePeriod] = useState<'all' | 'today' | 'month' | 'year'>('all');
@@ -49,24 +47,19 @@ export default function Investments() {
     });
 
     useEffect(() => {
-        loadData(true);
+        loadData();
     }, []);
 
-    const loadData = async (sync = false) => {
+    const loadData = async () => {
         try {
-            if (sync) {
-                await execute('sync_investment_prices', { force: false });
-            }
-            const [sumData, accData, platData, benchReport] = await Promise.all([
+            const [sumData, accData, platData] = await Promise.all([
                 execute<InvestmentSummary[]>('get_investments_summary'),
                 execute<Account[]>('get_accounts'),
                 execute<PlatformBalance[]>('get_investment_platform_summary'),
-                execute<any>('get_investment_benchmark_report')
             ]);
             setSummaries(sumData);
             setAccounts(accData.filter(a => a.account_type === 'investment'));
             setPlatformBalances(platData);
-            setBenchmarkReport(benchReport);
         } catch (error) {
             console.error('Failed to load investment data:', error);
         }
@@ -213,14 +206,7 @@ export default function Investments() {
         };
     }).filter(s => s !== null) as InvestmentSummary[];
 
-    const handleSync = async () => {
-        try {
-            await execute('sync_investment_prices', { force: true });
-            await loadData();
-        } catch (error) {
-            console.error('Failed to sync prices:', error);
-        }
-    };
+
 
     const handleAddLot = (invId: number, type?: string) => {
         setLotFormData({
@@ -431,49 +417,19 @@ export default function Investments() {
     return (
         <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-                <h1 className={darkTheme.title}>Investment Panel</h1>
-                <div className="flex gap-2">
-                    <button
-                        onClick={handleSync}
-                        className={darkTheme.btnSecondary + " flex items-center gap-2"}
-                        disabled={loading}
-                    >
-                        <span>🔄</span> {loading ? 'Syncing...' : 'Sync Prices'}
-                    </button>
-                    <button
-                        onClick={() => {
-                            setFormData({ name: '', investment_type: 'stock', account_id: accounts[0]?.id || 0 });
-                            setShowForm(true);
-                        }}
-                        className={darkTheme.btnPrimary}
-                    >
-                        Add Investment
-                    </button>
-                </div>
+                <h1 className={darkTheme.title}>Investment Portfolio</h1>
+                <button
+                    onClick={() => {
+                        setFormData({ name: '', investment_type: 'stock', account_id: accounts[0]?.id || 0 });
+                        setShowForm(true);
+                    }}
+                    className={darkTheme.btnPrimary}
+                >
+                    Add Investment
+                </button>
             </div>
 
-            <div className="flex justify-center mb-8">
-                <div className="bg-slate-800 p-1 rounded-xl flex gap-1 border border-slate-700 w-fit box-shadow-xl shadow-lg">
-                    <button 
-                        onClick={() => setViewMode('portfolio')}
-                        className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all ${viewMode === 'portfolio' ? 'bg-blue-600 shadow-md text-white' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        Portfolio Manager
-                    </button>
-                    <button 
-                        onClick={() => setViewMode('benchmark')}
-                        className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all ${viewMode === 'benchmark' ? 'bg-emerald-600 shadow-md text-white' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        Benchmark Tracking
-                    </button>
-                </div>
-            </div>
-
-            {viewMode === 'benchmark' && (
-                <BenchmarkTab report={benchmarkReport} refreshData={() => loadData(false)} />
-            )}
-
-            {viewMode === 'portfolio' && (
+            {(
                 <>
                 {/* Filter Bars */}
                 <div className="space-y-3 mb-6">

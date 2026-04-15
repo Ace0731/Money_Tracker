@@ -5,10 +5,8 @@ import Dashboard from './screens/Dashboard';
 import Transactions from './screens/Transactions';
 import Accounts from './screens/Accounts';
 import Categories from './screens/Categories';
-import Clients from './screens/Clients';
 import Projects from './screens/Projects';
 import Reports from './screens/Reports';
-import Investments from './screens/Investments';
 import Settings from './screens/Settings';
 import IncomeBreakdown from './screens/IncomeBreakdown';
 
@@ -26,10 +24,7 @@ function App() {
                     <Route path="/transactions" element={<Transactions />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/categories" element={<Categories />} />
-                    <Route path="/clients" element={<Clients />} />
                     <Route path="/projects" element={<Projects />} />
-
-                    <Route path="/investments" element={<Investments />} />
 
                     <Route path="/reports" element={<Reports />} />
 

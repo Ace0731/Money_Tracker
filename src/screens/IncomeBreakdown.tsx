@@ -3,6 +3,7 @@ import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import type { IncomeBreakdownItem, CategoryHour, Category } from '../types';
+import Swal from 'sweetalert2';
 
 export default function IncomeBreakdown() {
     const { execute } = useDatabase();
@@ -60,30 +61,45 @@ export default function IncomeBreakdown() {
         if (!selectedCategoryId) return;
 
         try {
-            await execute('create_category_hour', {
+        await execute('create_category_hour', {
                 hour: {
                     category_id: selectedCategoryId,
                     date: formData.date,
                     hours: formData.hours,
-                    notes: formData.notes || null
+                    notes: formData.notes || null,
                 }
             });
             await loadHourLogs(selectedCategoryId);
             await loadData();
             setFormData({ ...formData, hours: 0, notes: '' });
+            Swal.fire({ title: 'Hours Logged!', icon: 'success', timer: 1200, showConfirmButton: false, background: '#1e293b', color: '#f1f5f9' });
         } catch (error) {
             console.error('Failed to save hours:', error);
+            Swal.fire('Error', 'Failed to save hours.', 'error');
         }
     };
 
     const handleDeleteHour = async (id: number) => {
-        if (!window.confirm('Delete this hour log?')) return;
+        const result = await Swal.fire({
+            title: 'Delete this log?',
+            text: 'This hour entry will be permanently removed.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, delete',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#ef4444',
+            background: '#1e293b',
+            color: '#f1f5f9',
+        });
+        if (!result.isConfirmed) return;
         try {
             await execute('delete_category_hour', { id });
             if (selectedCategoryId) await loadHourLogs(selectedCategoryId);
             await loadData();
+            Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1200, showConfirmButton: false, background: '#1e293b', color: '#f1f5f9' });
         } catch (error) {
             console.error('Failed to delete hour log:', error);
+            Swal.fire('Error', 'Failed to delete hour log.', 'error');
         }
     };
 

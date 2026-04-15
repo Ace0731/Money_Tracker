@@ -20,15 +20,8 @@ const navigationGroups = [
     {
         title: 'Business',
         items: [
-            { name: 'Clients', path: '/clients', icon: '👥' },
             { name: 'Projects', path: '/projects', icon: '📋' },
             { name: 'Breakdown', path: '/income-breakdown', icon: '⏱️' },
-        ]
-    },
-    {
-        title: 'Growth',
-        items: [
-            { name: 'Investments', path: '/investments', icon: '💰' },
         ]
     },
     {
