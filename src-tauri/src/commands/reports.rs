@@ -75,6 +75,15 @@ pub struct AssetAllocation {
     pub percentage: f64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SourceCategorySummary {
+    pub direction: String,
+    pub source_name: String,
+    pub category_name: String,
+    pub total: f64,
+    pub count: i64,
+}
+
 fn apply_filters(query: &mut String, filters: &ReportFilters, params: &mut Vec<rusqlite::types::Value>) {
     if let Some(start) = &filters.start_date {
         query.push_str(" AND date >= ?");
@@ -508,4 +517,92 @@ pub fn get_asset_allocation(db: State<DbConnection>) -> Result<Vec<AssetAllocati
     }).collect();
 
     Ok(result)
+}
+
+#[tauri::command]
+pub fn get_source_category_breakdown(
+    db: State<DbConnection>,
+    filters: ReportFilters,
+) -> Result<Vec<SourceCategorySummary>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    // We'll use a UNION to handle different source/category definitions per direction
+    // 1. Income: Source = Client Name, Category = Category Name
+    // 2. Expense: Source = From Account Name, Category = Category Name
+    // 3. Transfer: Source = From Account Name, Category = To Account Name (or Goal Name)
+    
+    let mut query = String::from("
+        SELECT * FROM (
+            -- Income
+            SELECT 
+                'income' as direction,
+                COALESCE(cl.name, 'Direct') as source_name,
+                c.name as category_name,
+                SUM(t.amount) as total,
+                COUNT(*) as count,
+                t.date, t.client_id, t.project_id -- for filtering
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_id = c.id
+            LEFT JOIN clients cl ON t.client_id = cl.id
+            WHERE t.direction = 'income'
+            GROUP BY source_name, category_name
+
+            UNION ALL
+
+            -- Expense
+            SELECT 
+                'expense' as direction,
+                fa.name as source_name,
+                c.name as category_name,
+                SUM(t.amount) as total,
+                COUNT(*) as count,
+                t.date, t.client_id, t.project_id
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_id = c.id
+            LEFT JOIN accounts fa ON t.from_account_id = fa.id
+            WHERE t.direction = 'expense'
+            GROUP BY source_name, category_name
+
+            UNION ALL
+
+            -- Transfer
+            SELECT 
+                'transfer' as direction,
+                fa.name as source_name,
+                COALESCE(g.name, ta.name) as category_name,
+                SUM(t.amount) as total,
+                COUNT(*) as count,
+                t.date, t.client_id, t.project_id
+            FROM transactions t
+            LEFT JOIN accounts fa ON t.from_account_id = fa.id
+            LEFT JOIN accounts ta ON t.to_account_id = ta.id
+            LEFT JOIN goals g ON t.goal_id = g.id
+            WHERE t.direction = 'transfer'
+            GROUP BY source_name, category_name
+        ) as breakdown
+        WHERE 1=1
+    ");
+    
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![];
+    apply_filters(&mut query, &filters, &mut params_vec);
+    
+    query.push_str(" ORDER BY direction, source_name, total DESC");
+    
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    
+    let summaries = stmt
+        .query_map(rusqlite::params_from_iter(params_vec), |row| {
+            Ok(SourceCategorySummary {
+                direction: row.get(0)?,
+                source_name: row.get(1)?,
+                category_name: row.get(2)?,
+                total: row.get(3)?,
+                count: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    
+    Ok(summaries)
 }

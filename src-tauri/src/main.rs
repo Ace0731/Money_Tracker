@@ -87,6 +87,7 @@ fn main() {
             get_income_breakdown,
             get_net_worth_trend,
             get_asset_allocation,
+            get_source_category_breakdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

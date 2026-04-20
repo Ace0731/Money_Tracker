@@ -61,6 +61,14 @@ interface ProjectIncomeSummary {
     projects: ProjectDetail[];
 }
 
+interface SourceCategorySummary {
+    direction: string;
+    source_name: string;
+    category_name: string;
+    total: number;
+    count: number;
+}
+
 interface ReportFilters {
     start_date: string;
     end_date: string;
@@ -104,6 +112,9 @@ export default function Reports() {
     const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
     const [netWorthTrend, setNetWorthTrend] = useState<NetWorthPoint[]>([]);
     const [benchmarkReport, setBenchmarkReport] = useState<any>(null);
+    const [sourceCategoryBreakdown, setSourceCategoryBreakdown] = useState<SourceCategorySummary[]>([]);
+    const [sourceBreakdownType, setSourceBreakdownType] = useState<'income' | 'expense' | 'transfer'>('expense');
+    const [visualSourceBreakdownType, setVisualSourceBreakdownType] = useState<'income' | 'expense' | 'transfer'>('expense');
 
     // Metadata for Filters
     const [clients, setClients] = useState<Client[]>([]);
@@ -147,7 +158,7 @@ export default function Reports() {
                 project_id: filters.project_id || null,
             };
 
-            const [monthly, incCat, expCat, invCat, projectInc, stats, netWorth, benchReport] = await Promise.all([
+            const [monthly, incCat, expCat, invCat, projectInc, stats, netWorth, benchReport, sourceBreakdown] = await Promise.all([
                 execute<MonthlySummary[]>('get_monthly_summary', { year: selectedYear, filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'income', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'expense', filters: backendFilters }),
@@ -156,6 +167,7 @@ export default function Reports() {
                 execute<OverallStats>('get_overall_stats', { filters: backendFilters }),
                 execute<NetWorthPoint[]>('get_net_worth_trend'),
                 execute<any>('get_investment_benchmark_report'),
+                execute<SourceCategorySummary[]>('get_source_category_breakdown', { filters: backendFilters }),
             ]);
 
             setMonthlySummary(monthly);
@@ -166,6 +178,7 @@ export default function Reports() {
             setOverallStats(stats);
             setNetWorthTrend(netWorth);
             setBenchmarkReport(benchReport);
+            setSourceCategoryBreakdown(sourceBreakdown);
         } catch (error) {
             console.error('Failed to load reports:', error);
         }
@@ -574,6 +587,98 @@ export default function Reports() {
                         })()}
                     </div>
 
+                    {/* Source Distribution Stacked Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className={darkTheme.subtitle}>Source vs Category Distribution</h2>
+                            <select
+                                value={visualSourceBreakdownType}
+                                onChange={(e) => setVisualSourceBreakdownType(e.target.value as any)}
+                                className="bg-slate-900 text-sm text-slate-200 border border-slate-700 rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            >
+                                <option value="income">💵 Income Source Flow</option>
+                                <option value="expense">💸 Expense Source Flow</option>
+                                <option value="transfer">🔄 Transfer Source Flow</option>
+                            </select>
+                        </div>
+                        {(() => {
+                            const filtered = sourceCategoryBreakdown.filter(i => i.direction === visualSourceBreakdownType);
+                            if (filtered.length === 0) return <div className={darkTheme.empty}>No data for the selected type in this period.</div>;
+
+                            // Transform data for stacked bar chart: { source: string, Category1: amount, Category2: amount, ... }
+                            const sourcesMap: Record<string, any> = {};
+                            const categories = new Set<string>();
+
+                            filtered.forEach(item => {
+                                if (!sourcesMap[item.source_name]) {
+                                    sourcesMap[item.source_name] = { source: item.source_name, total: 0 };
+                                }
+                                sourcesMap[item.source_name][item.category_name] = item.total;
+                                sourcesMap[item.source_name].total += item.total;
+                                categories.add(item.category_name);
+                            });
+
+                            const data = Object.values(sourcesMap).sort((a, b) => b.total - a.total);
+                            const categoryList = Array.from(categories);
+                            const colors = visualSourceBreakdownType === 'income' ? ['#10b981', '#34d399', '#059669', '#047857', '#065f46'] : 
+                                           visualSourceBreakdownType === 'expense' ? ['#ef4444', '#f87171', '#dc2626', '#b91c1c', '#991b1b'] : 
+                                           ['#3b82f6', '#60a5fa', '#2563eb', '#1d4ed8', '#1e40af'];
+
+                            return (
+                                <div className="h-[400px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart
+                                            layout="vertical"
+                                            data={data}
+                                            margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                                            barSize={30}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={true} vertical={false} />
+                                            <XAxis type="number" stroke="#64748b" fontSize={11} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                            <YAxis type="category" dataKey="source" stroke="#94a3b8" fontSize={11} width={120} />
+                                            <Tooltip
+                                                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                                                content={({ active, payload, label }) => {
+                                                    if (active && payload && payload.length) {
+                                                        const total = payload.reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+                                                        return (
+                                                            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl min-w-[200px]">
+                                                                <p className="text-slate-100 font-bold mb-2 border-b border-slate-700 pb-1">{label}</p>
+                                                                {payload.map((entry: any, index: number) => (
+                                                                    <div key={index} className="flex justify-between gap-4 text-xs mb-1">
+                                                                        <div className="flex items-center gap-2 text-slate-400">
+                                                                            <div className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+                                                                            <span>{entry.name}:</span>
+                                                                        </div>
+                                                                        <span className="text-slate-100 font-mono">{formatCurrency(entry.value)}</span>
+                                                                    </div>
+                                                                ))}
+                                                                <div className="mt-2 pt-2 border-t border-slate-700 flex justify-between font-bold text-xs">
+                                                                    <span className="text-slate-300">Total</span>
+                                                                    <span className="text-slate-100 font-mono">{formatCurrency(total)}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                }}
+                                            />
+                                            {categoryList.map((cat, idx) => (
+                                                <Bar 
+                                                    key={cat} 
+                                                    dataKey={cat} 
+                                                    stackId="a" 
+                                                    fill={colors[idx % colors.length]} 
+                                                    radius={idx === categoryList.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} 
+                                                />
+                                            ))}
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            );
+                        })()}
+                    </div>
+
                     {/* Project Income Performance Chart */}
                     {projectIncomeReport.length > 0 && (
                         <div className={darkTheme.card + " p-6"}>
@@ -783,6 +888,66 @@ export default function Reports() {
                             </div>
                         </div>
                     )}
+
+                    {/* Source Breakdown Table */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className={darkTheme.subtitle}>Source Breakdown</h2>
+                            <select
+                                value={sourceBreakdownType}
+                                onChange={(e) => setSourceBreakdownType(e.target.value as any)}
+                                className="bg-slate-900 text-sm text-slate-200 border border-slate-700 rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            >
+                                <option value="income">💵 Income (Client → Category)</option>
+                                <option value="expense">💸 Expense (Account → Category)</option>
+                                <option value="transfer">🔄 Transfer (Account → Destination)</option>
+                            </select>
+                        </div>
+                        <div className="overflow-x-auto bg-slate-900/40 rounded-xl border border-slate-700/50">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-3">Source</th>
+                                        <th className="px-4 py-3">Category / Destination</th>
+                                        <th className="px-4 py-3 text-right">Count</th>
+                                        <th className="px-4 py-3 text-right">Total Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {sourceCategoryBreakdown
+                                        .filter(item => item.direction === sourceBreakdownType)
+                                        .map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
+                                                <td className="px-4 py-3 font-semibold text-slate-200">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${
+                                                            item.direction === 'income' ? 'bg-green-500' : 
+                                                            item.direction === 'expense' ? 'bg-red-500' : 'bg-blue-500'
+                                                        }`}></div>
+                                                        {item.source_name}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-400 font-medium">{item.category_name}</td>
+                                                <td className="px-4 py-3 text-right text-slate-500 font-mono italic">{item.count}tx</td>
+                                                <td className={`px-4 py-3 text-right font-bold font-mono ${
+                                                    item.direction === 'income' ? 'text-green-400' : 
+                                                    item.direction === 'expense' ? 'text-red-400' : 'text-blue-400'
+                                                }`}>
+                                                    {formatCurrency(item.total)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    {sourceCategoryBreakdown.filter(item => item.direction === sourceBreakdownType).length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="px-4 py-12 text-center text-slate-500 italic bg-slate-900/20">
+                                                No breakdown data for the selected type and filters.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
                     {/* Report Summary */}
                     <div className={darkTheme.card + " p-6 bg-blue-500/5 border-blue-500/20"}>
