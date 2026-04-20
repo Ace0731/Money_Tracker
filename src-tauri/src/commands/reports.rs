@@ -526,26 +526,23 @@ pub fn get_source_category_breakdown(
 ) -> Result<Vec<SourceCategorySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    // We'll use a UNION to handle different source/category definitions per direction
-    // 1. Income: Source = Client Name, Category = Category Name
-    // 2. Expense: Source = From Account Name, Category = Category Name
-    // 3. Transfer: Source = From Account Name, Category = To Account Name (or Goal Name)
+    // We'll gather raw transaction data in a subquery and then filter + group.
+    // This ensures that date/client filters apply to individual transactions correctly.
     
     let mut query = String::from("
-        SELECT * FROM (
+        SELECT direction, source_name, category_name, SUM(amount) as total, COUNT(*) as count
+        FROM (
             -- Income
             SELECT 
                 'income' as direction,
                 COALESCE(cl.name, 'Direct') as source_name,
                 c.name as category_name,
-                SUM(t.amount) as total,
-                COUNT(*) as count,
-                t.date, t.client_id, t.project_id -- for filtering
+                t.amount,
+                t.date, t.client_id, t.project_id
             FROM transactions t
             LEFT JOIN categories c ON t.category_id = c.id
             LEFT JOIN clients cl ON t.client_id = cl.id
             WHERE t.direction = 'income'
-            GROUP BY source_name, category_name
 
             UNION ALL
 
@@ -554,14 +551,12 @@ pub fn get_source_category_breakdown(
                 'expense' as direction,
                 fa.name as source_name,
                 c.name as category_name,
-                SUM(t.amount) as total,
-                COUNT(*) as count,
+                t.amount,
                 t.date, t.client_id, t.project_id
             FROM transactions t
             LEFT JOIN categories c ON t.category_id = c.id
             LEFT JOIN accounts fa ON t.from_account_id = fa.id
             WHERE t.direction = 'expense'
-            GROUP BY source_name, category_name
 
             UNION ALL
 
@@ -570,23 +565,21 @@ pub fn get_source_category_breakdown(
                 'transfer' as direction,
                 fa.name as source_name,
                 COALESCE(g.name, ta.name) as category_name,
-                SUM(t.amount) as total,
-                COUNT(*) as count,
+                t.amount,
                 t.date, t.client_id, t.project_id
             FROM transactions t
             LEFT JOIN accounts fa ON t.from_account_id = fa.id
             LEFT JOIN accounts ta ON t.to_account_id = ta.id
             LEFT JOIN goals g ON t.goal_id = g.id
             WHERE t.direction = 'transfer'
-            GROUP BY source_name, category_name
-        ) as breakdown
+        ) as raw_transactions
         WHERE 1=1
     ");
     
     let mut params_vec: Vec<rusqlite::types::Value> = vec![];
     apply_filters(&mut query, &filters, &mut params_vec);
     
-    query.push_str(" ORDER BY direction, source_name, total DESC");
+    query.push_str(" GROUP BY direction, source_name, category_name ORDER BY direction, source_name, total DESC");
     
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
     
