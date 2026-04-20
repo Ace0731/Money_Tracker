@@ -37,16 +37,17 @@ pub struct ProjectBreakdownItem {
 pub fn get_category_hours(
     db: State<DbConnection>,
     category_id: i64,
-    month: String, // YYYY-MM
+    start_date: String,
+    end_date: String,
 ) -> Result<Vec<CategoryHour>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, category_id, date, hours, notes, created_at FROM category_hours WHERE category_id = ?1 AND strftime('%Y-%m', date) = ?2 ORDER BY date DESC")
+        .prepare("SELECT id, category_id, date, hours, notes, created_at FROM category_hours WHERE category_id = ?1 AND date >= ?2 AND date <= ?3 ORDER BY date DESC")
         .map_err(|e| e.to_string())?;
     
     let hours = stmt
-        .query_map(params![category_id, month], |row| {
+        .query_map(params![category_id, start_date, end_date], |row| {
             Ok(CategoryHour {
                 id: Some(row.get(0)?),
                 category_id: row.get(1)?,
@@ -94,7 +95,8 @@ pub fn delete_category_hour(db: State<DbConnection>, id: i64) -> Result<(), Stri
 #[tauri::command]
 pub fn get_income_breakdown(
     db: State<DbConnection>,
-    month: String, // YYYY-MM
+    start_date: String,
+    end_date: String,
 ) -> Result<Vec<IncomeBreakdownItem>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
@@ -110,15 +112,15 @@ pub fn get_income_breakdown(
     for (cat_id, cat_name) in categories {
         // 2. Get manual hours for this category
         let manual_hours: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(hours), 0) FROM category_hours WHERE category_id = ?1 AND substr(date, 1, 7) = ?2",
-            params![cat_id, month],
+            "SELECT COALESCE(SUM(hours), 0) FROM category_hours WHERE category_id = ?1 AND date >= ?2 AND date <= ?3",
+            params![cat_id, start_date, end_date],
             |row| row.get(0)
         ).unwrap_or(0.0);
 
         // 3. Get income from transactions for this category (non-project)
         let manual_income: f64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE category_id = ?1 AND project_id IS NULL AND direction = 'income' AND substr(date, 1, 7) = ?2",
-            params![cat_id, month],
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE category_id = ?1 AND project_id IS NULL AND direction = 'income' AND date >= ?2 AND date <= ?3",
+            params![cat_id, start_date, end_date],
             |row| row.get(0)
         ).unwrap_or(0.0);
 
@@ -129,16 +131,16 @@ pub fn get_income_breakdown(
         let mut proj_stmt = conn.prepare("
             SELECT DISTINCT p.id, p.name 
             FROM projects p
-            LEFT JOIN transactions t ON t.project_id = p.id AND t.category_id = ?1 AND substr(t.date, 1, 7) = ?2
+            LEFT JOIN transactions t ON t.project_id = p.id AND t.category_id = ?1 AND t.date >= ?2 AND t.date <= ?3
             WHERE (
                 p.category_id = ?1 AND 
-                (p.start_date IS NULL OR p.start_date = '' OR substr(p.start_date, 1, 7) <= ?2) AND
-                (p.end_date IS NULL OR p.end_date = '' OR substr(p.end_date, 1, 7) >= ?2)
+                (p.start_date IS NULL OR p.start_date = '' OR p.start_date <= ?3) AND
+                (p.end_date IS NULL OR p.end_date = '' OR p.end_date >= ?2)
             )
             OR (t.project_id IS NOT NULL)
         ").map_err(|e| e.to_string())?;
         
-        let related_projects: Vec<(i64, String)> = proj_stmt.query_map(params![cat_id, month], |row| Ok((row.get(0)?, row.get(1)?)))
+        let related_projects: Vec<(i64, String)> = proj_stmt.query_map(params![cat_id, start_date, end_date], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
@@ -149,14 +151,14 @@ pub fn get_income_breakdown(
 
         for (p_id, p_name) in related_projects {
             let p_income: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = ?1 AND category_id = ?2 AND direction = 'income' AND substr(date, 1, 7) = ?3",
-                params![p_id, cat_id, month],
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE project_id = ?1 AND category_id = ?2 AND direction = 'income' AND date >= ?3 AND date <= ?4",
+                params![p_id, cat_id, start_date, end_date],
                 |row| row.get(0)
             ).unwrap_or(0.0);
 
             let p_hours: f64 = conn.query_row(
-                "SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = ?1 AND substr(date, 1, 7) = ?2",
-                params![p_id, month],
+                "SELECT COALESCE(SUM(hours), 0) FROM time_logs WHERE project_id = ?1 AND date >= ?2 AND date <= ?3",
+                params![p_id, start_date, end_date],
                 |row| row.get(0)
             ).unwrap_or(0.0);
 

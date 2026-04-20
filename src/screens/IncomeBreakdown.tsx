@@ -7,7 +7,14 @@ import Swal from 'sweetalert2';
 
 export default function IncomeBreakdown() {
     const { execute } = useDatabase();
+    const [viewMode, setViewMode] = useState<'month' | 'year' | 'range'>('month');
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [range, setRange] = useState({
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        end: new Date().toISOString().split('T')[0]
+    });
+
     const [breakdown, setBreakdown] = useState<IncomeBreakdownItem[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [showHourForm, setShowHourForm] = useState(false);
@@ -19,14 +26,36 @@ export default function IncomeBreakdown() {
         notes: ''
     });
 
+    const getDateRange = () => {
+        if (viewMode === 'month') {
+            const [y, m] = month.split('-').map(Number);
+            const lastDay = new Date(y, m, 0).getDate();
+            return {
+                start: `${month}-01`,
+                end: `${month}-${String(lastDay).padStart(2, '0')}`
+            };
+        } else if (viewMode === 'year') {
+            return {
+                start: `${year}-01-01`,
+                end: `${year}-12-31`
+            };
+        } else {
+            return {
+                start: range.start,
+                end: range.end
+            };
+        }
+    };
+
     useEffect(() => {
         loadData();
-    }, [month]);
+    }, [viewMode, month, year, range]);
 
     const loadData = async () => {
+        const { start, end } = getDateRange();
         try {
             const [data, cats] = await Promise.all([
-                execute<IncomeBreakdownItem[]>('get_income_breakdown', { month }),
+                execute<IncomeBreakdownItem[]>('get_income_breakdown', { startDate: start, endDate: end }),
                 execute<Category[]>('get_categories')
             ]);
             setBreakdown(data);
@@ -37,8 +66,9 @@ export default function IncomeBreakdown() {
     };
 
     const loadHourLogs = async (catId: number) => {
+        const { start, end } = getDateRange();
         try {
-            const logs = await execute<CategoryHour[]>('get_category_hours', { categoryId: catId, month });
+            const logs = await execute<CategoryHour[]>('get_category_hours', { categoryId: catId, startDate: start, endDate: end });
             setHourLogs(logs);
         } catch (error) {
             console.error('Failed to load hour logs:', error);
@@ -109,17 +139,71 @@ export default function IncomeBreakdown() {
 
     return (
         <div className="p-6 pb-20">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
                 <div>
                     <h1 className={darkTheme.title}>Income Breakdown</h1>
                     <p className="text-slate-400 text-sm mt-1">Hourly rate tracking for Income categories</p>
                 </div>
-                <input
-                    type="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+
+                <div className="flex flex-wrap items-center gap-3 bg-slate-800/50 p-1.5 rounded-xl border border-slate-700">
+                    {/* Mode Selector */}
+                    <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700/50">
+                        {(['month', 'year', 'range'] as const).map((mode) => (
+                            <button
+                                key={mode}
+                                onClick={() => setViewMode(mode)}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${
+                                    viewMode === mode 
+                                    ? 'bg-blue-600 text-white shadow-lg' 
+                                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                                }`}
+                            >
+                                {mode}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="h-6 w-px bg-slate-700 mx-1 hidden sm:block"></div>
+
+                    {/* Contextual Inputs */}
+                    {viewMode === 'month' && (
+                        <input
+                            type="month"
+                            value={month}
+                            onChange={(e) => setMonth(e.target.value)}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                    )}
+
+                    {viewMode === 'year' && (
+                        <input
+                            type="number"
+                            min="2000"
+                            max="2100"
+                            value={year}
+                            onChange={(e) => setYear(parseInt(e.target.value))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none w-24"
+                        />
+                    )}
+
+                    {viewMode === 'range' && (
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="date"
+                                value={range.start}
+                                onChange={(e) => setRange({ ...range, start: e.target.value })}
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                            <span className="text-slate-500 text-xs font-bold">TO</span>
+                            <input
+                                type="date"
+                                value={range.end}
+                                onChange={(e) => setRange({ ...range, end: e.target.value })}
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Top Stats */}
