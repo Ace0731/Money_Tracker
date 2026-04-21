@@ -88,6 +88,16 @@ fn main() {
             get_net_worth_trend,
             get_asset_allocation,
             get_source_category_breakdown,
+            // Estimation Engine
+            get_estimator_modules,
+            create_estimator_module,
+            update_estimator_module,
+            delete_estimator_module,
+            get_estimator_projects,
+            create_estimator_project,
+            update_estimator_actuals,
+            get_estimator_settings,
+            update_estimator_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

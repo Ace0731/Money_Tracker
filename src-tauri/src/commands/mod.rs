@@ -11,6 +11,7 @@ pub mod budget;
 pub mod goals;
 pub mod utils;
 pub mod income_breakdown;
+pub mod estimator;
 
 pub use accounts::*;
 pub use categories::*;
@@ -25,3 +26,4 @@ pub use budget::*;
 pub use goals::*;
 pub use utils::*;
 pub use income_breakdown::*;
+pub use estimator::*;

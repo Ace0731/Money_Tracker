@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, params};
 use std::sync::Mutex;
 use std::path::PathBuf;
 
@@ -503,6 +503,111 @@ pub fn initialize_database() -> Result<DbConnection> {
         )",
         [],
     )?;
+
+    // 41. Estimation Engine Tables
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS estimator_modules (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            avg_hours REAL NOT NULL,
+            usage_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS estimator_projects (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            project_type TEXT,
+            base_hours REAL,
+            adjusted_hours REAL,
+            learning_factor REAL,
+            final_hours REAL,
+            hourly_rate REAL,
+            estimated_price REAL,
+            actual_hours REAL,
+            actual_price REAL,
+            ratio REAL,
+            complexity TEXT,
+            urgency TEXT,
+            risk TEXT,
+            is_completed INTEGER DEFAULT 0,
+            is_high_value INTEGER DEFAULT 0,
+            suggested_price_at_creation REAL,
+            module_ids TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    );
+
+    // Migration for existing databases
+    let _ = conn.execute("ALTER TABLE estimator_projects ADD COLUMN is_high_value INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE estimator_projects ADD COLUMN suggested_price_at_creation REAL", []);
+
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS estimator_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )",
+        [],
+    );
+
+    // Initial Seeding for Estimator
+    let module_count: i64 = conn.query_row("SELECT COUNT(*) FROM estimator_modules", [], |r| r.get(0)).unwrap_or(0);
+    if module_count == 0 {
+        let seed_modules = [
+            ("UI Design (Standard)", 20.0),
+            ("Auth System (Login/Register)", 8.0),
+            ("API Integration (per endpoint)", 2.0),
+            ("Database Schema Design", 10.0),
+            ("Admin Dashboard", 30.0),
+            ("Payment Gateway Integration", 15.0),
+            ("Testing & QA", 12.0),
+            ("Deployment/DevOps", 6.0),
+        ];
+        for (name, hours) in seed_modules.iter() {
+            let _ = conn.execute("INSERT INTO estimator_modules (name, avg_hours) VALUES (?, ?)", params![name, hours]);
+        }
+    }
+
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('learning_factor', '0.8')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('default_hourly_rate', '300')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium', '1.0')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_high_value', '1.2')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_threshold', '20000')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_standard_count', '0')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_high_value_count', '0')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_old', '1.0')", []);
+    let _ = conn.execute("INSERT OR IGNORE INTO estimator_settings (key, value) VALUES ('market_premium_high_value_old', '1.2')", []);
+
+    // Retrospective Calibration: Initial Market Premium based on existing history
+    let history_count: i64 = conn.query_row("SELECT COUNT(*) FROM estimator_projects WHERE is_completed = 1", [], |r| r.get(0)).unwrap_or(0);
+    if history_count > 0 {
+        let mut stmt = conn.prepare("SELECT actual_price, final_hours, hourly_rate FROM estimator_projects WHERE is_completed = 1").unwrap();
+        let rows = stmt.query_map([], |row| {
+            let actual_price: f64 = row.get(0)?;
+            let final_hours: f64 = row.get(1)?;
+            let hourly_rate: f64 = row.get(2)?;
+            let calc_price = final_hours * hourly_rate;
+            if calc_price > 0.0 { Ok(actual_price / calc_price) } else { Ok(1.0) }
+        }).unwrap();
+
+        let mut sum_ratios = 0.0;
+        let mut count = 0;
+        for ratio in rows {
+            if let Ok(r) = ratio {
+                sum_ratios += r;
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            let initial_premium = sum_ratios / count as f64;
+            let _ = conn.execute("UPDATE estimator_settings SET value = ? WHERE key = 'market_premium' AND value = '1.0'", [initial_premium.to_string()]);
+        }
+    }
 
     Ok(DbConnection(Mutex::new(conn)))
 }
