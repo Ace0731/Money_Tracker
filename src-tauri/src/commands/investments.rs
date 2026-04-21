@@ -113,9 +113,11 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 i.id, i.name, i.type, i.account_id, i.units, i.avg_buy_price, i.current_price, 
                 i.principal_amount, i.interest_rate, i.maturity_date, i.maturity_amount, i.monthly_deposit, i.notes, 
                 i.provider_symbol, i.last_updated_at, i.principal_charges, i.created_at,
+                i.tenure_months, i.opening_date, i.compounding, i.bank_name, i.category_id,
                 a.name as account_name
             FROM investments i
             JOIN accounts a ON i.account_id = a.id
+            WHERE a.is_investment_active = 1
         ")
         .map_err(|e| e.to_string())?;
     
@@ -143,14 +145,14 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 last_updated_at: row.get(14)?,
                 principal_charges: row.get(15)?,
                 created_at: row.get(16)?,
-                tenure_months: None,
-                opening_date: None,
-                compounding: None,
-                bank_name: None,
-                category_id: None,
+                tenure_months: row.get(17)?,
+                opening_date: row.get(18)?,
+                compounding: row.get(19)?,
+                bank_name: row.get(20)?,
+                category_id: row.get(21)?,
             };
 
-            let account_name: String = row.get(17)?;
+            let account_name: String = row.get(22)?;
 
             // Fetch Lots
             let mut lot_stmt = conn.prepare("SELECT id, investment_id, quantity, price_per_unit, charges, date, lot_type FROM investment_lots WHERE investment_id = ?1 ORDER BY date DESC").unwrap();
@@ -175,7 +177,8 @@ pub fn get_investments_summary(db: State<DbConnection>) -> Result<Vec<Investment
                 match lot.lot_type.as_str() {
                     "buy" => {
                         total_units += lot.quantity;
-                        total_invested += (lot.quantity * lot.price_per_unit) + lot.charges;
+                        let lot_cost = ((lot.quantity * lot.price_per_unit) * 100.0).round() / 100.0;
+                        total_invested += lot_cost + lot.charges;
                         total_expenses_lots += lot.charges;
                     },
                     "sell" => {
@@ -327,8 +330,11 @@ pub fn update_investment(db: State<DbConnection>, investment: Investment) -> Res
 pub fn delete_investment(db: State<DbConnection>, id: i64) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    // First clear references in transactions
+    // First clear references and dependent data
     conn.execute("UPDATE transactions SET investment_id = NULL WHERE investment_id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+        
+    conn.execute("DELETE FROM investment_lots WHERE investment_id = ?1", [id])
         .map_err(|e| e.to_string())?;
         
     conn.execute("DELETE FROM investments WHERE id = ?1", [id])
@@ -349,7 +355,7 @@ pub fn get_investment_platform_summary(db: State<DbConnection>) -> Result<Vec<Pl
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn.prepare(
-        "SELECT id, name, opening_balance FROM accounts WHERE type = 'investment'"
+        "SELECT id, name, opening_balance FROM accounts WHERE type = 'investment' AND is_investment_active = 1"
     ).map_err(|e| e.to_string())?;
     
     let accounts_iter = stmt.query_map([], |row| {
@@ -370,7 +376,7 @@ pub fn get_investment_platform_summary(db: State<DbConnection>) -> Result<Vec<Pl
         ).unwrap_or(0.0);
 
         let allocated: f64 = conn.query_row(
-            "SELECT COALESCE(ROUND(SUM(l.quantity * l.price_per_unit + l.charges), 2), 0)
+            "SELECT COALESCE(SUM(ROUND(l.quantity * l.price_per_unit, 2) + l.charges), 0)
              FROM investment_lots l
              JOIN investments i ON l.investment_id = i.id
              WHERE i.account_id = ?1",
@@ -523,6 +529,93 @@ pub async fn sync_investment_prices(db: State<'_, DbConnection>, force: bool) ->
         }
     }
 
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_fixed_income_daily(db: State<DbConnection>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn.prepare(
+        "SELECT id, name, type, principal_amount, interest_rate, opening_date, monthly_deposit, tenure_months, compounding, current_price, last_updated_at 
+         FROM investments 
+         WHERE type IN ('fd', 'rd')"
+    ).map_err(|e| e.to_string())?;
+    
+    let investments = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,      // id
+            row.get::<_, String>(1)?,   // name
+            row.get::<_, String>(2)?,   // type
+            row.get::<_, Option<f64>>(3)?, // principal
+            row.get::<_, Option<f64>>(4)?, // rate
+            row.get::<_, Option<String>>(5)?, // opening_date
+            row.get::<_, Option<f64>>(6)?, // monthly_deposit
+            row.get::<_, Option<i32>>(7)?, // tenure
+            row.get::<_, Option<String>>(8)?, // compounding
+            row.get::<_, Option<f64>>(9)?, // current_price
+            row.get::<_, Option<String>>(10)?, // last_updated
+        ))
+    }).map_err(|e| e.to_string())?;
+    
+    let now = chrono::Local::now();
+    let today_str = now.format("%Y-%m-%d").to_string();
+    
+    for inv in investments {
+        let (id, _name, inv_type, principal, rate, opening_date, monthly_deposit, _tenure, compounding, _current_price, last_updated) = inv.map_err(|e| e.to_string())?;
+        
+        // Skip if already updated today
+        if let Some(last) = last_updated {
+            if last.starts_with(&today_str) {
+                continue;
+            }
+        }
+        
+        let rate = rate.unwrap_or(0.0) / 100.0;
+        let compounding_freq = match compounding.as_deref() {
+            Some("monthly") => 12.0,
+            Some("quarterly") => 4.0,
+            _ => 4.0, // default quarterly
+        };
+        
+        // Fetch all lots for this investment to calculate realistic valuation
+        let mut stmt_lots = conn.prepare("SELECT quantity, price_per_unit, date FROM investment_lots WHERE investment_id = ?1").map_err(|e| e.to_string())?;
+        let lots_iter = stmt_lots.query_map(params![id], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, String>(2)?))
+        }).map_err(|e| e.to_string())?;
+
+        let mut total_valuation = 0.0;
+        for lot in lots_iter {
+            if let Ok((qty, price, lot_date)) = lot {
+                let principal = qty * price;
+                // Parse date (handling both possible formats)
+                let l_dt = chrono::NaiveDateTime::parse_from_str(&lot_date, "%Y-%m-%d %H:%M:%S")
+                    .map(|dt| dt.date())
+                    .or_else(|_| chrono::NaiveDate::parse_from_str(&lot_date, "%Y-%m-%d"));
+
+                if let Ok(l_date) = l_dt {
+                    let days_elapsed = now.date_naive().signed_duration_since(l_date).num_days() as f64;
+                    if days_elapsed > 0.0 {
+                        let t = days_elapsed / 365.0;
+                        total_valuation += principal * (1.0 + rate / compounding_freq).powf(compounding_freq * t);
+                    } else {
+                        total_valuation += principal;
+                    }
+                } else {
+                    total_valuation += principal;
+                }
+            }
+        }
+
+        if total_valuation > 0.0 {
+            let now_ts = now.format("%Y-%m-%d %H:%M:%S").to_string();
+            conn.execute(
+                "UPDATE investments SET current_price = ?1, last_updated_at = ?2 WHERE id = ?3",
+                params![total_valuation, now_ts, id]
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+    
     Ok(())
 }
 
@@ -702,8 +795,8 @@ pub fn get_investment_benchmark_report(db: State<DbConnection>) -> Result<Invest
         SELECT mth, SUM(total) FROM (
             -- Source A: investment lots
             SELECT strftime('%Y-%m', il.date) as mth,
-                   SUM(CASE WHEN il.lot_type = 'sell' THEN -(il.quantity * il.price_per_unit)
-                            ELSE (il.quantity * il.price_per_unit + il.charges) END) as total
+                   SUM(CASE WHEN il.lot_type = 'sell' THEN -(ROUND(il.quantity * il.price_per_unit, 2) + il.charges)
+                            ELSE (ROUND(il.quantity * il.price_per_unit, 2) + il.charges) END) as total
             FROM investment_lots il
             JOIN investments i ON il.investment_id = i.id
             WHERE strftime('%Y-%m', il.date) >= ?1 AND i.type != 'pf'
@@ -712,11 +805,15 @@ pub fn get_investment_benchmark_report(db: State<DbConnection>) -> Result<Invest
             UNION ALL
 
             -- Source B: transactions tagged with an investment category (is_investment flag)
+            -- Exclude transactions that are going INTO an investment account (type='investment')
+            -- because those are already tracked via Lots in Source A.
             SELECT strftime('%Y-%m', t.date) as mth,
                    ROUND(SUM(t.amount), 2) as total
             FROM transactions t
             JOIN categories c ON t.category_id = c.id
+            LEFT JOIN accounts acc_to ON t.to_account_id = acc_to.id
             WHERE COALESCE(c.is_investment, 0) = 1
+              AND (acc_to.type IS NULL OR acc_to.type != 'investment')
               AND strftime('%Y-%m', t.date) >= ?1
             GROUP BY mth
         )

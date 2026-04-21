@@ -1,33 +1,46 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
 import type { Investment, InvestmentSummary, Account, PlatformBalance, InvestmentLot } from '../types';
-import { formatCurrency, formatUnits, formatRelativeTime } from '../utils/formatters';
+import { formatCurrency, formatUnits } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import Swal from 'sweetalert2';
-import {
-    calculateFDMaturity,
-    calculateRDMaturity,
-    calculatePPFBalance,
-    calculateNPSValue,
-    fetchNPSNAV,
-    getDaysRemaining
-} from '../utils/investmentCalculations';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
 export default function Investments() {
-    const { execute, loading } = useDatabase();
+    const { execute } = useDatabase();
     const [summaries, setSummaries] = useState<InvestmentSummary[]>([]);
-    const [accounts, setAccounts] = useState<Account[]>([]);
+    const [allInvestmentAccounts, setAllInvestmentAccounts] = useState<Account[]>([]);
     const [platformBalances, setPlatformBalances] = useState<PlatformBalance[]>([]);
-
-    const [showLotForm, setShowLotForm] = useState(false);
-    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd' | 'nps' | 'ppf' | 'pf'>('all');
+    
+    const initialFormData: Investment = {
+        name: '',
+        investment_type: 'stock',
+        account_id: 0,
+        principal_amount: undefined,
+        interest_rate: undefined,
+        opening_date: new Date().toISOString().split('T')[0],
+        tenure_months: undefined,
+        compounding: 'quarterly',
+        monthly_deposit: undefined,
+    };
+    
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'holdings' | 'settings'>('dashboard');
+    const [filter, setFilter] = useState<'all' | 'stock' | 'mf' | 'fd' | 'rd'>('all');
     const [timePeriod, setTimePeriod] = useState<'all' | 'today' | 'month' | 'year'>('all');
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-    const [showViewLots, setShowViewLots] = useState(false);
-    const [viewLotsSummary, setViewLotsSummary] = useState<InvestmentSummary | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [chartViewMode, setChartViewMode] = useState<'category' | 'individual'>('category');
+
+    // Form states
+    const [showForm, setShowForm] = useState(false);
+    const [fetchingPrice, setFetchingPrice] = useState(false);
+    const [formData, setFormData] = useState<Investment>(initialFormData);
+
+    // Lot states
+    const [showLotForm, setShowLotForm] = useState(false);
+    const [editingLotId, setEditingLotId] = useState<number | null>(null);
     const [lotFormData, setLotFormData] = useState<InvestmentLot>({
         investment_id: 0,
         quantity: 0,
@@ -36,18 +49,21 @@ export default function Investments() {
         date: new Date().toISOString().split('T')[0],
         lot_type: 'buy'
     });
-    const [showForm, setShowForm] = useState(false);
-    const [fetchingPrice, setFetchingPrice] = useState(false);
-    const [editingLotId, setEditingLotId] = useState<number | null>(null);
-    const [bankAmount, setBankAmount] = useState<string>('');
-    const [formData, setFormData] = useState<Investment>({
-        name: '',
-        investment_type: 'stock',
-        account_id: 0,
-    });
+
+    const [showViewLots, setShowViewLots] = useState(false);
+    const [viewLotsSummary, setViewLotsSummary] = useState<InvestmentSummary | null>(null);
 
     useEffect(() => {
-        loadData();
+        const init = async () => {
+            try {
+                await execute('update_fixed_income_daily');
+                await execute('sync_investment_prices', { force: false });
+                loadData();
+            } catch (err) {
+                console.error("Initialization error:", err);
+            }
+        };
+        init();
     }, []);
 
     const loadData = async () => {
@@ -57,32 +73,79 @@ export default function Investments() {
                 execute<Account[]>('get_accounts'),
                 execute<PlatformBalance[]>('get_investment_platform_summary'),
             ]);
-            setSummaries(sumData);
-            setAccounts(accData.filter(a => a.account_type === 'investment'));
+            
+            setAllInvestmentAccounts(accData.filter(a => a.account_type === 'investment'));
+            setSummaries(sumData.filter(s => ['stock', 'mf', 'fd', 'rd'].includes(s.investment.investment_type)));
             setPlatformBalances(platData);
         } catch (error) {
             console.error('Failed to load investment data:', error);
         }
     };
 
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            await Promise.all([
+                execute('sync_investment_prices', { force: true }),
+                execute('update_fixed_income_daily')
+            ]);
+            await loadData();
+            Swal.fire({
+                title: 'Success',
+                text: 'Portfolio synced successfully!',
+                icon: 'success',
+                showConfirmButton: false,
+                timer: 2000,
+                timerProgressBar: true,
+                background: '#0f172a',
+                color: '#f1f5f9'
+            });
+        } catch (error) {
+            console.error('Sync failed:', error);
+            Swal.fire('Error', 'Sync failed', 'error');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleToggleAccount = async (account: Account) => {
+        try {
+            await execute('update_account', { 
+                account: { 
+                    ...account, 
+                    is_investment_active: !account.is_investment_active 
+                } 
+            });
+            await loadData();
+        } catch (error) {
+            console.error('Failed to toggle account:', error);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            let newId = formData.id;
-            const isNew = !formData.id;
+            let invId = formData.id;
+            const isNew = !invId;
             const type = formData.investment_type;
 
             if (formData.id) {
                 await execute('update_investment', { investment: formData });
             } else {
-                newId = await execute('create_investment', { investment: formData }) as number;
+                invId = await execute('create_investment', { investment: formData }) as number;
             }
-            await loadData();
+            
+            // Recalculate interest immediately for FD/RD
+            if (type === 'fd' || type === 'rd') {
+                await execute('update_fixed_income_daily');
+            }
+            
             setShowForm(false);
-            setFormData({ name: '', investment_type: 'stock', account_id: 0 });
+            setFormData(initialFormData);
+            await loadData();
 
-            if (isNew) {
-                handleAddLot(newId as number, type);
+            if (isNew && invId) {
+                handleAddLot(invId, type, formData.opening_date);
             }
         } catch (error) {
             console.error('Failed to save investment:', error);
@@ -90,11 +153,16 @@ export default function Investments() {
     };
 
     const handleEdit = (inv: Investment) => {
-        setFormData(inv);
+        setFormData({ 
+            ...inv,
+            opening_date: inv.opening_date || new Date().toISOString().split('T')[0],
+            compounding: inv.compounding || 'quarterly'
+        });
         setShowForm(true);
     };
 
     const openLotsModal = (summary: InvestmentSummary) => {
+        setFormData({ ...summary.investment }); // Sync formData to the current investment
         setViewLotsSummary(summary);
         setShowViewLots(true);
     };
@@ -116,126 +184,28 @@ export default function Investments() {
             try {
                 await execute('delete_investment', { id });
                 await loadData();
-                Swal.fire({
-                    title: 'Deleted!',
-                    icon: 'success',
-                    background: '#0f172a',
-                    color: '#f1f5f9',
-                    timer: 1500,
-                    showConfirmButton: false
-                });
             } catch (error) {
-                console.error('Failed to delete investment:', error);
-                Swal.fire({
-                    title: 'Error',
-                    text: 'Failed to delete investment',
-                    icon: 'error',
-                    background: '#0f172a',
-                    color: '#f1f5f9'
-                });
+                console.error('Delete failed:', error);
             }
         }
     };
 
-    const totalUnallocated = platformBalances.reduce((acc, p) => acc + p.balance, 0);
-
-    // Time period filtering helpers
-    const getDateRange = () => {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-        switch (timePeriod) {
-            case 'today':
-                return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) };
-            case 'month':
-                return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
-            case 'year':
-                return { start: new Date(selectedYear, 0, 1), end: new Date(selectedYear, 11, 31, 23, 59, 59) };
-            default:
-                return null;
-        }
-    };
-
-    // Get available years from investment lots
-    const getAvailableYears = () => {
-        const years = new Set<number>();
-        summaries.forEach(s => {
-            s.lots.forEach(lot => {
-                const year = new Date(lot.date).getFullYear();
-                years.add(year);
-            });
-        });
-        return Array.from(years).sort((a, b) => b - a);
-    };
-
-    const availableYears = getAvailableYears();
-
-    const isLotInPeriod = (lotDate: string) => {
-        if (timePeriod === 'all') return true;
-        const range = getDateRange();
-        if (!range) return true;
-
-        const lot = new Date(lotDate);
-        return lot >= range.start && lot <= range.end;
-    };
-
-    // Filter summaries by time period
-    const timeFilteredSummaries = summaries.map(summary => {
-        if (timePeriod === 'all') return summary;
-
-        const filteredLots = summary.lots.filter(lot => isLotInPeriod(lot.date));
-        if (filteredLots.length === 0) return null;
-
-        const totalInvested = filteredLots.reduce((sum, lot) =>
-            sum + (lot.quantity * lot.price_per_unit + lot.charges), 0);
-        const totalUnits = filteredLots.reduce((sum, lot) => sum + lot.quantity, 0);
-        const currentValuation = totalUnits * (summary.investment.current_price || 0);
-        const avgBuyPrice = totalUnits > 0 ? totalInvested / totalUnits : 0;
-        const netGain = currentValuation - totalInvested;
-        const gainPercentage = totalInvested > 0 ? (netGain / totalInvested) * 100 : 0;
-
-        return {
-            ...summary,
-            lots: filteredLots,
-            total_invested: totalInvested,
-            total_units: totalUnits,
-            current_valuation: currentValuation,
-            avg_buy_price: avgBuyPrice,
-            net_gain: netGain,
-            gain_percentage: gainPercentage,
-        };
-    }).filter(s => s !== null) as InvestmentSummary[];
-
-
-
-    const handleAddLot = (invId: number, type?: string) => {
+    const handleAddLot = (invId: number, type?: string, prefDate?: string) => {
         setLotFormData({
             investment_id: invId,
-            quantity: type === 'fd' || type === 'rd' || type === 'nps' || type === 'ppf' || type === 'pf' ? 1 : 0,
+            quantity: type === 'fd' || type === 'rd' ? 1 : 0,
             price_per_unit: 0,
             charges: 0,
-            date: new Date().toISOString().split('T')[0],
+            date: prefDate || formData.opening_date || new Date().toISOString().split('T')[0],
             lot_type: 'buy'
         });
         setEditingLotId(null);
-        setBankAmount('');
         setShowLotForm(true);
     };
 
     const handleEditLot = (lot: InvestmentLot) => {
-        setLotFormData({
-            ...lot,
-            investment_id: lot.investment_id,
-            date: lot.date || new Date().toISOString().split('T')[0]
-        });
+        setLotFormData({ ...lot });
         setEditingLotId(lot.id!);
-        
-        // Defensive number conversion for bankAmount calculation
-        const qty = Number(lot.quantity) || 0;
-        const price = Number(lot.price_per_unit) || 0;
-        const chg = Number(lot.charges) || 0;
-        setBankAmount((qty * price + chg).toFixed(2));
-        
         setShowLotForm(true);
     };
 
@@ -247,24 +217,33 @@ export default function Investments() {
             } else {
                 await execute('add_investment_lot', { lot: lotFormData });
             }
-            await loadData();
+            const [sumData] = await Promise.all([
+                execute<InvestmentSummary[]>('get_investments_summary'),
+                loadData()
+            ]);
+            
+            // Refresh the current view lots modal data
+            if (viewLotsSummary) {
+                const updated = sumData.find(s => s.investment.id === viewLotsSummary.investment.id);
+                if (updated) setViewLotsSummary(updated);
+            }
+            
             setShowLotForm(false);
             setEditingLotId(null);
-            setBankAmount('');
         } catch (error) {
-            console.error('Failed to submit lot:', error);
-            Swal.fire('Error', error as string, 'error');
+            console.error('Lot submit failed:', error);
         }
     };
 
     const handleDeleteLot = async (lotId: number) => {
         const result = await Swal.fire({
             title: 'Delete this lot?',
+            text: "This transaction will be removed from your holdings.",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
             cancelButtonColor: '#334155',
-            confirmButtonText: 'Delete',
+            confirmButtonText: 'Yes, delete',
             background: '#0f172a',
             color: '#f1f5f9'
         });
@@ -272,1027 +251,605 @@ export default function Investments() {
         if (result.isConfirmed) {
             try {
                 await execute('delete_investment_lot', { id: lotId });
-                await loadData();
+                const [sumData] = await Promise.all([
+                    execute<InvestmentSummary[]>('get_investments_summary'),
+                    loadData()
+                ]);
+
+                if (viewLotsSummary) {
+                    const updated = sumData.find(s => s.investment.id === viewLotsSummary.investment.id);
+                    if (updated) setViewLotsSummary(updated);
+                }
             } catch (error) {
-                console.error('Failed to delete lot:', error);
-                Swal.fire({
-                    title: 'Error',
-                    text: 'Failed to delete lot',
-                    icon: 'error',
-                    background: '#0f172a',
-                    color: '#f1f5f9'
-                });
+                console.error('Lot delete failed:', error);
             }
         }
     };
 
-    const fetchLivePrice = async () => {
+    const fetchPrice = async () => {
         if (!formData.provider_symbol) return;
-        console.log('Frontend: Fetching price for', formData.provider_symbol, 'Type:', formData.investment_type);
         setFetchingPrice(true);
         try {
             const price = await execute('get_live_market_price', {
                 symbol: formData.provider_symbol,
                 invType: formData.investment_type
             });
-            console.log('Frontend: Received price:', price);
-            setFormData({ ...formData, current_price: price as number });
-        } catch (error: any) {
-            console.error('Failed to fetch live price:', error);
-            const errorMsg = typeof error === 'string' ? error : (error.message || 'Check your internet or symbol');
-            Swal.fire({
-                title: 'Fetch Failed',
-                text: errorMsg,
-                icon: 'error',
-                background: '#0f172a',
-                color: '#f1f5f9'
-            });
+            setFormData(prev => ({ ...prev, current_price: price as number }));
+        } catch (error) {
+            console.error('Price fetch failed:', error);
         } finally {
             setFetchingPrice(false);
         }
     };
 
-    const calculateMaturity = () => {
-        if (!formData.interest_rate) return;
-
-        // Calculate months from tenure or maturity date
-        let tenureMonths = formData.tenure_months || 12;
-        if (formData.maturity_date) {
-            const startDate = formData.opening_date ? new Date(formData.opening_date) : new Date();
-            const endDate = new Date(formData.maturity_date);
-            tenureMonths = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
-        }
-        if (tenureMonths <= 0) return;
-
-        let principal = formData.principal_amount || 0;
-        if (formData.id && !principal) {
-            const summary = summaries.find(s => s.investment.id === formData.id);
-            principal = summary?.total_invested || 0;
-        }
-
-        const compounding = formData.compounding || 'quarterly';
-
-        if (formData.investment_type === 'fd' && principal > 0) {
-            const result = calculateFDMaturity(principal, formData.interest_rate, tenureMonths, compounding);
-            setFormData(prev => ({ ...prev, maturity_amount: result.maturityAmount }));
-        } else if (formData.investment_type === 'rd' && formData.monthly_deposit) {
-            const result = calculateRDMaturity(formData.monthly_deposit, formData.interest_rate, tenureMonths, compounding === 'monthly' ? 'monthly' : 'quarterly');
-            setFormData(prev => ({ ...prev, maturity_amount: result.maturityAmount }));
-        } else if (formData.investment_type === 'ppf' && principal > 0) {
-            const yearsCompleted = Math.floor(tenureMonths / 12);
-            const result = calculatePPFBalance(principal, yearsCompleted, formData.interest_rate);
-            setFormData(prev => ({ ...prev, maturity_amount: result.currentBalance }));
+    // Filtering logic
+    const getDateRange = () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        switch (timePeriod) {
+            case 'today': return { start, end: now };
+            case 'month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+            case 'year': return { start: new Date(selectedYear, 0, 1), end: new Date(selectedYear, 11, 31) };
+            default: return null;
         }
     };
 
-    // Fetch NPS NAV from API
-    const handleFetchNPSNAV = async () => {
-        if (!formData.provider_symbol) {
-            Swal.fire('Error', 'Please select a fund manager and scheme type first', 'warning');
-            return;
-        }
-
-        setFetchingPrice(true);
-        try {
-            const navData = await fetchNPSNAV(formData.provider_symbol);
-            if (navData) {
-                setFormData(prev => ({
-                    ...prev,
-                    current_price: navData.nav,
-                    last_updated_at: navData.date
-                }));
-                Swal.fire('Success', `Current NAV: ₹${navData.nav} (as of ${navData.date})`, 'success');
-            } else {
-                Swal.fire('Error', 'Could not fetch NAV. Please try again later.', 'error');
-            }
-        } catch (error) {
-            console.error('Failed to fetch NPS NAV:', error);
-            Swal.fire('Error', 'Failed to fetch NAV', 'error');
-        }
-        setFetchingPrice(false);
+    const isLotInPeriod = (date: string) => {
+        if (timePeriod === 'all') return true;
+        const range = getDateRange();
+        if (!range) return true;
+        const d = new Date(date);
+        return d >= range.start && d <= range.end;
     };
 
-    useEffect(() => {
-        if (showForm && (formData.investment_type === 'fd' || formData.investment_type === 'rd' || formData.investment_type === 'ppf')) {
-            calculateMaturity();
-        }
-    }, [formData.interest_rate, formData.maturity_date, formData.monthly_deposit, formData.investment_type, formData.principal_amount, formData.tenure_months, formData.compounding, showForm]);
+    const timeFilteredSummaries = summaries.map(s => {
+        if (timePeriod === 'all') return s;
+        const filteredLots = s.lots.filter(l => isLotInPeriod(l.date));
+        if (filteredLots.length === 0) return null;
+        
+        const totalInvested = filteredLots.reduce((acc, l) => acc + (l.quantity * l.price_per_unit + l.charges), 0);
+        const totalUnits = filteredLots.reduce((acc, l) => acc + l.quantity, 0);
+        const valuation = totalUnits * (s.investment.current_price || 0);
+        
+        return { 
+            ...s, 
+            lots: filteredLots, 
+            total_invested: totalInvested, 
+            total_units: totalUnits, 
+            current_valuation: valuation,
+            net_gain: valuation - totalInvested,
+            gain_percentage: totalInvested > 0 ? ((valuation - totalInvested) / totalInvested) * 100 : 0
+        };
+    }).filter(s => s !== null) as InvestmentSummary[];
 
-    const getChartData = () => {
-        const dataSource = timeFilteredSummaries;
-        if (filter === 'all') {
-            const categories = dataSource.reduce((acc, s) => {
-                const type = s.investment.investment_type;
-                acc[type] = (acc[type] || 0) + s.current_valuation;
-                return acc;
-            }, {} as Record<string, number>);
-
-            return Object.entries(categories).map(([name, value]) => ({
-                name: name.toUpperCase(),
-                value,
-                originalName: name
-            }));
-        } else {
-            return dataSource
-                .filter(s => s.investment.investment_type === filter)
-                .map(s => ({
-                    name: s.investment.name,
-                    value: s.current_valuation,
-                    originalName: s.investment.name
-                }))
-                .sort((a, b) => b.value - a.value);
-        }
-    };
-
-    const chartData = getChartData();
-    const filteredSummaries = filter === 'all'
-        ? timeFilteredSummaries
+    const activeFilteredSummaries = filter === 'all' 
+        ? timeFilteredSummaries 
         : timeFilteredSummaries.filter(s => s.investment.investment_type === filter);
 
-    const filteredPortfolio = filteredSummaries.reduce((sum, s) => sum + s.current_valuation, 0);
-    const filteredInvested = filteredSummaries.reduce((sum, s) => sum + s.total_invested, 0);
-    const filteredGain = filteredPortfolio - filteredInvested;
-    const filteredGainPercentage = filteredInvested > 0 ? (filteredGain / filteredInvested) * 100 : 0;
+    const totalPortfolio = activeFilteredSummaries.reduce((acc, s) => acc + s.current_valuation, 0);
+    const totalInvested = activeFilteredSummaries.reduce((acc, s) => acc + s.total_invested, 0);
+    const totalGain = totalPortfolio - totalInvested;
+    const gainPercent = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
+
+    const allocationData = chartViewMode === 'category' 
+        ? Object.entries(activeFilteredSummaries.reduce((acc, s) => {
+            acc[s.investment.investment_type] = (acc[s.investment.investment_type] || 0) + s.current_valuation;
+            return acc;
+          }, {} as Record<string, number>)).map(([name, value]) => ({ name: name.toUpperCase(), value }))
+        : activeFilteredSummaries.map(s => ({ name: s.investment.name, value: s.current_valuation }));
+
+    const performanceData = activeFilteredSummaries.map(s => ({
+        name: s.investment.name,
+        invested: s.total_invested,
+        current: s.current_valuation
+    })).sort((a, b) => b.current - a.current).slice(0, 10);
 
     return (
         <div className="p-6">
+            {/* Header */}
             <div className="flex justify-between items-center mb-6">
-                <h1 className={darkTheme.title}>Investment Portfolio</h1>
-                <button
-                    onClick={() => {
-                        setFormData({ name: '', investment_type: 'stock', account_id: accounts[0]?.id || 0 });
-                        setShowForm(true);
-                    }}
-                    className={darkTheme.btnPrimary}
-                >
-                    Add Investment
-                </button>
+                <div>
+                    <h1 className={darkTheme.title}>Investment Portfolio</h1>
+                    <p className="text-slate-400 text-sm">Manage your wealth across platforms</p>
+                </div>
+                <div className="flex gap-3">
+                    <button onClick={handleSync} disabled={isSyncing} className={`${darkTheme.btnSecondary} flex items-center gap-2 ${isSyncing ? 'animate-pulse' : ''}`}>
+                        {isSyncing ? '⌛ Syncing...' : '🔄 Sync Prices'}
+                    </button>
+                    <button 
+                        onClick={() => {
+                            setFormData(initialFormData);
+                            setShowForm(true);
+                        }} 
+                        className={darkTheme.btnPrimary}
+                    >
+                        + Add Investment
+                    </button>
+                </div>
             </div>
 
-            {(
-                <>
-                {/* Filter Bars */}
-                <div className="space-y-3 mb-6">
-                    {/* Asset Type Filter */}
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                        {(['all', 'stock', 'mf', 'fd', 'rd', 'nps', 'ppf', 'pf'] as const).map(t => (
+            {/* Tabs */}
+            <div className="mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
+                <div className="inline-flex p-1 bg-slate-800/40 rounded-2xl border border-slate-700/30 backdrop-blur-sm gap-1">
+                    {(['dashboard', 'holdings', 'settings'] as const).map(tab => {
+                        const isActive = activeTab === tab;
+                        const config = {
+                            dashboard: { label: 'Dashboard', icon: '📊' },
+                            holdings: { label: 'Holdings', icon: '🔢' },
+                            settings: { label: 'Settings', icon: '⚙️' }
+                        }[tab];
+
+                        return (
                             <button
-                                key={t}
-                                onClick={() => setFilter(t)}
-                            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all border ${filter === t
-                                ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
-                                }`}
-                        >
-                            {t.toUpperCase()}
-                        </button>
-                    ))}
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={`
+                                    flex items-center gap-2.5 px-6 py-2 rounded-xl text-sm font-bold transition-all duration-500 relative
+                                    ${isActive 
+                                        ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] ring-1 ring-white/10' 
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/20'}
+                                `}
+                            >
+                                <span className={isActive ? 'scale-110' : 'opacity-60 grayscale'}>{config.icon}</span>
+                                <span className={isActive ? 'tracking-wide' : ''}>{config.label}</span>
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* Time Period Filter */}
-                <div className="flex gap-2 items-center overflow-x-auto pb-2 scrollbar-hide">
-                    {(['all', 'today', 'month', 'year'] as const).map(t => (
-                        <button
-                            key={t}
-                            onClick={() => setTimePeriod(t)}
-                            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all border ${timePeriod === t
-                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
-                                }`}
-                        >
-                            {t === 'all' ? 'ALL TIME' : t === 'today' ? 'TODAY' : t === 'month' ? 'THIS MONTH' : 'THIS YEAR'}
-                        </button>
-                    ))}
-
-                    {timePeriod === 'year' && availableYears.length > 0 && (
-                        <select
-                            value={selectedYear}
-                            onChange={(e) => setSelectedYear(Number(e.target.value))}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 focus:outline-none focus:border-emerald-500"
-                        >
-                            {availableYears.map(year => (
-                                <option key={year} value={year}>{year}</option>
+                {/* Global Filters */}
+                {activeTab !== 'settings' && (
+                    <div className="flex flex-wrap justify-center gap-3 bg-slate-800/20 p-2 rounded-2xl border border-slate-700/30">
+                        <div className="flex gap-1">
+                            {(['all', 'stock', 'mf', 'fd', 'rd'] as const).map(f => (
+                                <button key={f} onClick={() => setFilter(f)} className={`px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all ${filter === f ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:bg-slate-700/50'}`}>
+                                    {f.toUpperCase()}
+                                </button>
                             ))}
-                        </select>
-                    )}
-                </div>
-            </div>
-
-            {/* Portfolio Summary & Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                <div className="lg:col-span-2 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className={darkTheme.card + " p-6"}>
-                            <div className="text-sm text-slate-400 mb-1">Portfolio Value</div>
-                            <div className="text-2xl font-bold text-slate-100">{formatCurrency(filteredPortfolio)}</div>
                         </div>
-                        <div className={darkTheme.card + " p-6"}>
-                            <div className="text-sm text-slate-400 mb-1">Total Invested</div>
-                            <div className="text-2xl font-bold text-slate-100">{formatCurrency(filteredInvested)}</div>
+                        <div className="h-6 w-[1px] bg-slate-700 mx-1 hidden md:block"></div>
+                        <div className="flex items-center gap-2">
+                            <select value={timePeriod} onChange={(e) => setTimePeriod(e.target.value as any)} className="bg-transparent text-slate-200 text-xs font-bold px-2 py-1 cursor-pointer outline-none">
+                                <option value="all">All Time</option>
+                                <option value="today">Today</option>
+                                <option value="month">This Month</option>
+                                <option value="year">Specific Year</option>
+                            </select>
+                            {timePeriod === 'year' && (
+                                <input type="number" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="w-16 bg-slate-700/50 text-white text-xs px-2 py-1 rounded border-none font-bold" />
+                            )}
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className={darkTheme.card + " p-6"}>
-                            <div className="text-sm text-slate-400 mb-1">Returns</div>
-                            <div className={`text-2xl font-bold ${filteredGain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {filteredGain >= 0 ? '+' : ''}{formatCurrency(filteredGain)} ({filteredGainPercentage.toFixed(1)}%)
-                            </div>
-                        </div>
-                        <div className={darkTheme.card + " p-6"}>
-                            <div className="text-sm text-slate-400 mb-1">Platform Cash</div>
-                            <div className="text-2xl font-bold text-blue-400">{formatCurrency(totalUnallocated)}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className={darkTheme.card + " p-4 flex flex-col items-center justify-center min-h-[300px]"}>
-                    <h3 className="text-xs font-bold text-slate-500 uppercase mb-4 self-start">
-                        {filter === 'all' ? 'Allocation by Category' : `Allocation: ${filter.toUpperCase()}`}
-                    </h3>
-                    {chartData.length > 0 ? (
-                        <div className="w-full h-[250px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={chartData}
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                    >
-                                        {chartData.map((_, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip
-                                        content={({ active, payload }) => {
-                                            if (active && payload && payload.length) {
-                                                const entry = payload[0];
-                                                return (
-                                                    <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-3 rounded-lg shadow-2xl min-w-[160px]">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <div className="w-2 h-2 rounded-full" style={{ background: entry.payload.fill || entry.color }} />
-                                                            <span className="text-slate-200 font-bold">{entry.name}</span>
-                                                        </div>
-                                                        <div className="text-xl font-mono text-slate-100">
-                                                            {formatCurrency(Number(entry.value))}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        }}
-                                    />
-                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    ) : (
-                        <div className="text-slate-600 italic text-sm">No data for chart</div>
-                    )}
-                </div>
+                )}
             </div>
 
-            {loading && <div className={darkTheme.loading}>Loading portfolio...</div>}
+            {/* Content Area */}
+            {activeTab === 'dashboard' && (
+                <div className="space-y-6">
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className={`${darkTheme.card} p-4`}>
+                            <p className="text-slate-400 text-xs mb-1">Total Valuation</p>
+                            <p className="text-2xl font-bold text-white">{formatCurrency(totalPortfolio)}</p>
+                        </div>
+                        <div className={`${darkTheme.card} p-4`}>
+                            <p className="text-slate-400 text-xs mb-1">Total Invested</p>
+                            <p className="text-2xl font-bold text-slate-200">{formatCurrency(totalInvested)}</p>
+                        </div>
+                        <div className={`${darkTheme.card} p-4`}>
+                            <p className="text-slate-400 text-xs mb-1">Total Gain/Loss</p>
+                            <p className={`text-2xl font-bold ${totalGain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {totalGain >= 0 ? '+' : ''}{formatCurrency(totalGain)}
+                            </p>
+                        </div>
+                        <div className={`${darkTheme.card} p-4`}>
+                            <p className="text-slate-400 text-xs mb-1">Overall Return</p>
+                            <p className={`text-2xl font-bold ${gainPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {gainPercent.toFixed(2)}%
+                            </p>
+                        </div>
+                    </div>
 
-            <div className="space-y-8">
-                {/* Platform Wallets Section */}
-                <section>
-                    <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
-                        <span>💳</span> Investment Platforms / Wallets
-                    </h2>
-                    <div className="flex flex-wrap gap-4">
-                        {platformBalances.map((plat) => (
-                            <div key={plat.account_id} className={darkTheme.card + " px-4 py-3 flex items-center gap-4 min-w-[200px]"}>
-                                <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400 text-xl">🏦</div>
-                                <div>
-                                    <div className="text-xs text-slate-500 uppercase font-semibold">{plat.name}</div>
-                                    <div className="text-lg font-bold text-slate-100">{formatCurrency(plat.balance)}</div>
+                    {/* Platform Balance Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {platformBalances.map(p => (
+                            <div key={p.name} className={`${darkTheme.card} p-4 border border-slate-700/30 bg-gradient-to-br from-slate-800/50 to-slate-900/50`}>
+                                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">{p.name}</div>
+                                <div className="text-xl font-bold text-white">{formatCurrency(p.balance)}</div>
+                                <div className="mt-2 h-1 w-full bg-slate-700 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500" style={{ width: p.balance > 0 ? '100%' : '0' }}></div>
                                 </div>
                             </div>
                         ))}
+                        {platformBalances.length === 0 && <div className={`${darkTheme.card} p-4 text-slate-500 italic text-sm`}>No active accounts.</div>}
                     </div>
-                </section>
-                {/* Stocks & MFs Section */}
-                {(filter === 'all' || filter === 'stock' || filter === 'mf') && (
-                    <section>
-                        <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
-                            <span>📈</span> Stocks & Mutual Funds
-                        </h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {filteredSummaries
-                                .filter(s => ['stock', 'mf'].includes(s.investment.investment_type))
-                                .map((s) => (
-                                    <div key={s.investment.id} className={darkTheme.card + " overflow-hidden"}>
-                                        <div
-                                            className="p-4 cursor-pointer hover:bg-slate-800/30 transition-colors"
-                                            onClick={() => openLotsModal(s)}
-                                        >
-                                            <div className="flex justify-between items-start mb-3">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-100 text-lg flex items-center gap-2">
-                                                        {s.investment.name}
-                                                        <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">
-                                                            📋 View Lots
-                                                        </span>
-                                                    </h3>
-                                                    <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                        {s.investment.investment_type} • {s.account_name} • <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
-                                                    <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
-                                                    <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
-                                                </div>
-                                            </div>
 
-                                            <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
-                                                <div>
-                                                    <div className="text-[10px] text-slate-500 uppercase">Total Value</div>
-                                                    <div className="text-sm font-medium text-slate-100">{formatCurrency(s.current_valuation)}</div>
-                                                </div>
-                                                <div>
-                                                    <div className="text-[10px] text-slate-500 uppercase">Avg Price</div>
-                                                    <div className="text-sm font-medium text-slate-300">{formatUnits(s.avg_buy_price)}</div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className="text-[10px] text-slate-500 uppercase">Returns</div>
-                                                    <div className={`text-sm font-bold ${s.net_gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                                        {s.gain_percentage.toFixed(1)}% ({s.net_gain >= 0 ? '+' : ''}{formatCurrency(s.net_gain)})
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                    {/* Chart Section - Allocation */}
+                    <div className={`${darkTheme.card} p-6`}>
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-white tracking-tight">Asset Allocation</h3>
+                                <p className="text-xs text-slate-500">Distribution of current wealth</p>
+                            </div>
+                            <select 
+                                value={chartViewMode} 
+                                onChange={(e) => setChartViewMode(e.target.value as any)}
+                                className="bg-slate-800 text-slate-300 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-700 outline-none cursor-pointer hover:bg-slate-700/50 transition-colors"
+                            >
+                                <option value="category">BY CATEGORY</option>
+                                <option value="individual">BY INDIVIDUAL ASSET</option>
+                            </select>
                         </div>
-                    </section>
-                )}
-
-                {/* FD & RD Section */}
-                {(filter === 'all' || filter === 'fd' || filter === 'rd') && (
-                    <section>
-                        <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
-                            <span>🏦</span> Fixed Income (FD & RD)
-                        </h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {filteredSummaries
-                                .filter(s => ['fd', 'rd'].includes(s.investment.investment_type))
-                                .map((s) => (
-                                    <div key={s.investment.id} className={darkTheme.card + " p-4"}>
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
-                                                <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                    {s.investment.investment_type} • {s.account_name} • <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
-                                                <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
-                                                <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Net Invested</div>
-                                                <div className="text-sm font-medium text-slate-300">{formatCurrency(s.total_invested - s.total_expenses)}</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Interest</div>
-                                                <div className="text-sm font-medium text-slate-100">{s.investment.interest_rate}%</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[10px] text-slate-500 uppercase">Maturity</div>
-                                                <div className="text-sm font-medium text-slate-300">
-                                                    {s.investment.maturity_amount ? formatCurrency(s.investment.maturity_amount) : (s.investment.maturity_date || 'N/A')}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-3 grid grid-cols-2 gap-2">
-                                            <div className="text-[10px] text-slate-500 flex justify-between bg-slate-900/50 p-1.5 rounded">
-                                                <span>Gross Capital:</span>
-                                                <span className="text-slate-300">{formatCurrency(s.total_invested)}</span>
-                                            </div>
-                                            <div className="text-[10px] text-slate-500 flex justify-between bg-slate-900/50 p-1.5 rounded">
-                                                <span>Bank Charges:</span>
-                                                <span className="text-red-400">{formatCurrency(s.total_expenses)}</span>
-                                            </div>
-                                        </div>
-
-                                        {s.investment.investment_type === 'rd' && s.investment.monthly_deposit && (
-                                            <div className="mt-2 text-[10px] text-blue-400 text-right">
-                                                Monthly Deposit: {formatCurrency(s.investment.monthly_deposit)}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                        <div className="h-[450px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie 
+                                        data={allocationData} 
+                                        innerRadius={chartViewMode === 'category' ? 100 : 120} 
+                                        outerRadius={chartViewMode === 'category' ? 140 : 160} 
+                                        paddingAngle={5} 
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {allocationData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                    </Pie>
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
+                                        itemStyle={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '12px' }}
+                                        labelStyle={{ display: 'none' }}
+                                    />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
                         </div>
-                    </section>
-                )}
+                    </div>
 
-                {/* NPS & PPF Retirement Section */}
-                {(filter === 'all' || filter === 'nps' || filter === 'ppf' || filter === 'pf') && (
-                    <section>
-                        <h2 className={darkTheme.subtitle + " mb-4 flex items-center gap-2"}>
-                            <span>🎯</span> Retirement (NPS, PPF, PF)
-                        </h2>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {filteredSummaries
-                                .filter(s => ['nps', 'ppf', 'pf'].includes(s.investment.investment_type))
-                                .map((s) => {
-                                    // Calculate NPS value if NAV available
-                                    const npsValue = s.investment.investment_type === 'nps' && s.total_units && s.investment.current_price
-                                        ? calculateNPSValue(s.total_units, s.investment.current_price, s.total_invested)
-                                        : null;
-
-                                    // Calculate PPF estimated balance
-                                    const ppfBalance = (s.investment.investment_type === 'ppf' || s.investment.investment_type === 'pf') && s.investment.opening_date
-                                        ? calculatePPFBalance(
-                                            s.total_invested,
-                                            Math.floor((new Date().getTime() - new Date(s.investment.opening_date).getTime()) / (1000 * 60 * 60 * 24 * 365)),
-                                            s.investment.interest_rate || 7.1
-                                        )
-                                        : null;
-
-                                    const daysToMaturity = s.investment.maturity_date ? getDaysRemaining(s.investment.maturity_date) : null;
-
-                                    return (
-                                        <div key={s.investment.id} className={darkTheme.card + " p-4"}>
-                                            <div className="flex justify-between items-start mb-3">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-100 text-lg">{s.investment.name}</h3>
-                                                    <div className="text-xs text-slate-400 uppercase tracking-wider">
-                                                        {s.investment.investment_type.toUpperCase()} • {s.account_name}
-                                                        {s.investment.bank_name && ` • ${s.investment.bank_name}`}
-                                                        {s.investment.last_updated_at && ` • `}
-                                                        {s.investment.last_updated_at && <span className="text-blue-400/80">{formatRelativeTime(s.investment.last_updated_at)}</span>}
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleAddLot(s.investment.id!, s.investment.investment_type)} className="text-blue-400 hover:text-blue-300 text-xs px-2 py-1 bg-blue-400/10 rounded">+ Add</button>
-                                                    <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
-                                                    <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-400 hover:text-red-400">🗑️</button>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-3 gap-4 border-t border-slate-700/50 pt-3">
-                                                <div>
-                                                    <div className="text-[10px] text-slate-500 uppercase">Total Invested</div>
-                                                    <div className="text-sm font-medium text-slate-100">{formatCurrency(s.total_invested)}</div>
-                                                </div>
-                                                <div>
-                                                    <div className="text-[10px] text-slate-500 uppercase">
-                                                        {s.investment.investment_type === 'nps' ? 'Current Value' : 'Est. Balance'}
-                                                    </div>
-                                                    <div className="text-sm font-medium text-emerald-400">
-                                                        {npsValue ? formatCurrency(npsValue.currentValue) :
-                                                            ppfBalance ? formatCurrency(ppfBalance.currentBalance) :
-                                                                formatCurrency(s.current_valuation)}
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="text-[10px] text-slate-500 uppercase">
-                                                        {s.investment.investment_type === 'nps' ? 'Returns' : 'Interest Earned'}
-                                                    </div>
-                                                    <div className={`text-sm font-medium ${(npsValue?.absoluteReturn || ppfBalance?.interestEarned || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
-                                                        }`}>
-                                                        {npsValue ? `${formatCurrency(npsValue.absoluteReturn)} (${npsValue.percentageReturn.toFixed(1)}%)` :
-                                                            ppfBalance ? formatCurrency(ppfBalance.interestEarned) :
-                                                                '---'}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {s.investment.investment_type === 'nps' && s.investment.current_price && (
-                                                <div className="mt-2 flex justify-between items-center text-xs">
-                                                    <span className="text-slate-500">
-                                                        NAV: {formatCurrency(s.investment.current_price)} • Units: {formatUnits(s.total_units)}
-                                                    </span>
-                                                    {s.investment.last_updated_at && (
-                                                        <span className="text-slate-600">as of {s.investment.last_updated_at}</span>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {s.investment.investment_type === 'ppf' && daysToMaturity !== null && (
-                                                <div className="mt-2 text-xs text-blue-400">
-                                                    {daysToMaturity > 0
-                                                        ? `📅 ${Math.ceil(daysToMaturity / 365)} years remaining (${daysToMaturity} days)`
-                                                        : '✅ Matured'}
-                                                </div>
-                                            )}
-
-                                            {s.investment.monthly_deposit && (
-                                                <div className="mt-2 text-[10px] text-blue-400 text-right">
-                                                    Monthly SIP: {formatCurrency(s.investment.monthly_deposit)}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            {filteredSummaries.filter(s => ['nps', 'ppf', 'pf'].includes(s.investment.investment_type)).length === 0 && (
-                                <div className="text-slate-500 text-sm italic col-span-2">
-                                    No NPS/PPF/PF investments. Add one using the "Add Investment" button.
-                                </div>
-                            )}
+                    {/* Performance Row */}
+                    <div className={`${darkTheme.card} p-6`}>
+                        <div>
+                            <h3 className="text-lg font-bold text-white tracking-tight">Asset Performance</h3>
+                            <p className="text-xs text-slate-500 mb-6">Invested vs Current Valuation (Top 10)</p>
                         </div>
-                    </section>
-                )}
-            </div>
-            </>
+                        <div className="h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={performanceData} layout="vertical" margin={{ left: 40, right: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                                    <XAxis type="number" stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${v/1000}k`} />
+                                    <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={100} />
+                                    <Tooltip 
+                                        cursor={{ fill: '#33415520' }}
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                                    />
+                                    <Legend />
+                                    <Bar dataKey="invested" name="Invested" fill="#475569" radius={[0, 4, 4, 0]} />
+                                    <Bar dataKey="current" name="Valuation" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
             )}
 
-            {/* Investment Form Modal */}
-            {
-                showForm && (
-                    <div className={darkTheme.modalOverlay}>
-                        <div className={darkTheme.modalContentLarge}>
-                            <h2 className={darkTheme.modalTitle}>
-                                {formData.id ? 'Edit Investment' : 'Add Investment'}
-                            </h2>
+            {activeTab === 'holdings' && (
+                <div className="space-y-4">
+                    <div className={`${darkTheme.card} overflow-hidden`}>
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="text-slate-400 text-xs border-b border-slate-700">
+                                    <th className="p-4">Investment</th>
+                                    <th className="p-4 text-right">Units/Principal</th>
+                                    <th className="p-4 text-right">Avg Buy/Interest</th>
+                                    <th className="p-4 text-right">Current Value</th>
+                                    <th className="p-4 text-right">Returns/Gain</th>
+                                    <th className="p-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {activeFilteredSummaries.map(s => (
+                                    <tr key={s.investment.id} className="hover:bg-slate-800/30 transition-colors group">
+                                        <td className="p-4">
+                                            <div className="font-medium text-white">{s.investment.name}</div>
+                                            <div className="text-[10px] text-slate-500 uppercase flex gap-2">
+                                                <span>{s.investment.investment_type}</span>
+                                                {s.investment.provider_symbol && <span>• {s.investment.provider_symbol}</span>}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right font-mono text-xs">
+                                            {s.investment.investment_type === 'stock' || s.investment.investment_type === 'mf' 
+                                                ? formatUnits(s.total_units) 
+                                                : formatCurrency(s.total_invested)}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <div className="text-white text-sm">{formatCurrency(s.investment.current_price || 0)}</div>
+                                            <div className="text-[10px] text-slate-500">
+                                                {(s.investment.investment_type === 'fd' || s.investment.investment_type === 'rd') 
+                                                    ? `Rate: ${s.investment.interest_rate}%` 
+                                                    : `Avg: ${formatCurrency(s.avg_buy_price)}`}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <div className="text-white font-medium">{formatCurrency(s.current_valuation)}</div>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <div className={`text-sm font-medium ${s.net_gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {formatCurrency(s.net_gain)}
+                                            </div>
+                                            <div className={`text-[10px] ${s.gain_percentage >= 0 ? 'text-emerald-500/70' : 'text-rose-500/70'}`}>
+                                                {s.gain_percentage.toFixed(2)}%
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => openLotsModal(s)} className="text-blue-400 hover:text-blue-300">📊</button>
+                                                <button onClick={() => handleEdit(s.investment)} className="text-slate-400 hover:text-white">✏️</button>
+                                                <button onClick={() => handleDelete(s.investment.id!)} className="text-slate-500 hover:text-rose-400">🗑️</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {activeFilteredSummaries.length === 0 && (
+                            <div className="p-12 text-center text-slate-500 italic">No investments found matching filters.</div>
+                        )}
+                    </div>
+                </div>
+            )}
 
-                            <form onSubmit={handleSubmit} className="space-y-4">
+            {activeTab === 'settings' && (
+                <div className={`${darkTheme.card} p-6 max-w-2xl`}>
+                    <h3 className="text-lg font-semibold mb-6 text-slate-200">Active Investment Platforms</h3>
+                    <p className="text-slate-400 text-sm mb-6">Choose which accounts to include in your portfolio summary. Only accounts marked as "Investment" type are shown here.</p>
+                    <div className="space-y-4">
+                        {allInvestmentAccounts.map(acc => (
+                            <div key={acc.id} className="flex justify-between items-center p-4 rounded-xl bg-slate-800/40 border border-slate-700/50">
+                                <div>
+                                    <div className="font-medium text-white">{acc.name}</div>
+                                    <div className="text-xs text-slate-500 capitalize">{acc.account_type} Account</div>
+                                </div>
+                                <button
+                                    onClick={() => handleToggleAccount(acc)}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${acc.is_investment_active ? 'bg-blue-600' : 'bg-slate-700'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${acc.is_investment_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Modals */}
+            {showForm && (
+                <div className={darkTheme.modalOverlay}>
+                    <div className={darkTheme.modalContentLarge}>
+                        <h2 className={darkTheme.modalTitle}>{formData.id ? 'Edit Investment' : 'New Investment'}</h2>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-slate-400">Name</label>
+                                    <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className={darkTheme.input} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-slate-400">Type</label>
+                                    <select value={formData.investment_type} onChange={e => setFormData({ ...formData, investment_type: e.target.value as any })} className={darkTheme.input}>
+                                        <option value="stock">Stock</option>
+                                        <option value="mf">Mutual Fund</option>
+                                        <option value="fd">Fixed Deposit</option>
+                                        <option value="rd">Recurring Deposit</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Symbol field only for stocks/mf */}
+                            {(formData.investment_type === 'stock' || formData.investment_type === 'mf') && (
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={darkTheme.label}>Name *</label>
-                                        <input
-                                            type="text" required
-                                            value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                            className={darkTheme.input}
-                                            placeholder="e.g., Nifty 50 Index Fund"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className={darkTheme.label}>Type *</label>
-                                        <select
-                                            value={formData.investment_type}
-                                            onChange={(e) => setFormData({ ...formData, investment_type: e.target.value as any })}
-                                            className={darkTheme.select}
-                                        >
-                                            <option value="stock">Stock</option>
-                                            <option value="mf">Mutual Fund</option>
-                                            <option value="fd">Fixed Deposit</option>
-                                            <option value="rd">Recurring Deposit</option>
-                                            <option value="nps">NPS (National Pension)</option>
-                                            <option value="ppf">PPF (Public Provident Fund)</option>
-                                            <option value="pf">PF (Provident Fund)</option>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Platform/Account</label>
+                                        <select required value={formData.account_id} onChange={e => setFormData({ ...formData, account_id: parseInt(e.target.value) })} className={darkTheme.input}>
+                                            <option value={0}>Select Platform</option>
+                                            {allInvestmentAccounts.filter(a => a.is_investment_active).map(a => (
+                                                <option key={a.id} value={a.id}>{a.name}</option>
+                                            ))}
                                         </select>
                                     </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Symbol/Code (Optional)</label>
+                                        <div className="flex gap-2">
+                                            <input value={formData.provider_symbol || ''} onChange={e => setFormData({ ...formData, provider_symbol: e.target.value })} className={darkTheme.input} placeholder="RELIANCE.NS" />
+                                            <button type="button" onClick={fetchPrice} disabled={fetchingPrice} className="px-3 bg-slate-700 hover:bg-slate-600 rounded text-xs">
+                                                {fetchingPrice ? '...' : '🔍'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
+                            )}
 
-                                <div>
-                                    <label className={darkTheme.label}>Platform / Account *</label>
-                                    <select
-                                        required
-                                        value={formData.account_id}
-                                        onChange={(e) => setFormData({ ...formData, account_id: parseInt(e.target.value) })}
-                                        className={darkTheme.select}
-                                    >
-                                        <option value="">Select Platform</option>
-                                        {accounts.map(acc => (
-                                            <option key={acc.id} value={acc.id}>{acc.name}</option>
+                            {/* Platform only for FD/RD */}
+                            {(formData.investment_type === 'fd' || formData.investment_type === 'rd') && (
+                                <div className="space-y-1">
+                                    <label className="text-xs text-slate-400">Platform/Account</label>
+                                    <select required value={formData.account_id} onChange={e => setFormData({ ...formData, account_id: parseInt(e.target.value) })} className={darkTheme.input}>
+                                        <option value={0}>Select Platform</option>
+                                        {allInvestmentAccounts.filter(a => a.is_investment_active).map(a => (
+                                            <option key={a.id} value={a.id}>{a.name}</option>
                                         ))}
                                     </select>
                                 </div>
-
-                                {(formData.investment_type === 'stock' || formData.investment_type === 'mf') && (
-                                    <>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>Market Symbol</label>
-                                                <input
-                                                    type="text"
-                                                    value={formData.provider_symbol || ''}
-                                                    onChange={(e) => setFormData({ ...formData, provider_symbol: e.target.value })}
-                                                    className={darkTheme.input}
-                                                    placeholder={formData.investment_type === 'stock' ? 'e.g. RELIANCE.NS or RELIANCE.BO' : 'e.g. 120505'}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className={darkTheme.label}>Current Market Price</label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="number" step="0.000001"
-                                                        value={formData.current_price || ''}
-                                                        onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
-                                                        className={darkTheme.input + " flex-1"}
-                                                        placeholder="Price per unit"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={fetchLivePrice}
-                                                        className="px-3 bg-slate-800 rounded text-green-400 hover:bg-slate-700"
-                                                        disabled={fetchingPrice || !formData.provider_symbol}
-                                                        title="Fetch Live Price"
-                                                    >
-                                                        {fetchingPrice ? '...' : '⚡'}
-                                                    </button>
-                                                </div>
-                                            </div>
+                            )}
+    
+                            {/* Dynamic Fields for FD/RD */}
+                            {(formData.investment_type === 'fd' || formData.investment_type === 'rd') && (
+                                <div className="space-y-4 pt-2 border-t border-slate-700/50">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-400">{formData.investment_type === 'fd' ? 'Principal Amount' : 'Monthly Deposit'}</label>
+                                            <input 
+                                                type="number" 
+                                                required 
+                                                value={formData.investment_type === 'fd' ? (formData.principal_amount || '') : (formData.monthly_deposit || '')} 
+                                                onChange={e => setFormData({ 
+                                                    ...formData, 
+                                                    [formData.investment_type === 'fd' ? 'principal_amount' : 'monthly_deposit']: parseFloat(e.target.value) 
+                                                })} 
+                                                className={darkTheme.input} 
+                                            />
                                         </div>
-
-                                        {formData.id && (
-                                            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
-                                                💡 Units and Buy Price are managed via <b>Lots</b> in the main view.
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-
-                                {(formData.investment_type === 'fd' || formData.investment_type === 'rd') && (
-                                    <>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>Interest (%)</label>
-                                                <input
-                                                    type="number" step="0.000001"
-                                                    value={formData.interest_rate || ''}
-                                                    onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder="e.g. 7.5"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className={darkTheme.label}>Maturity Date</label>
-                                                <input
-                                                    type="date"
-                                                    value={formData.maturity_date || ''}
-                                                    onChange={(e) => setFormData({ ...formData, maturity_date: e.target.value })}
-                                                    className={darkTheme.input}
-                                                />
-                                            </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-400">Interest Rate (%)</label>
+                                            <input 
+                                                type="number" 
+                                                step="0.01" 
+                                                required 
+                                                value={formData.interest_rate || ''} 
+                                                onChange={e => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })} 
+                                                className={darkTheme.input} 
+                                            />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>Maturity Amount</label>
-                                                <input
-                                                    type="number" step="0.000001"
-                                                    value={formData.maturity_amount || ''}
-                                                    onChange={(e) => setFormData({ ...formData, maturity_amount: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder="Expected at end"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className={darkTheme.label}>Current Value (Override)</label>
-                                                <input
-                                                    type="number" step="0.000001"
-                                                    value={formData.current_price || ''}
-                                                    onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder="Optional market value"
-                                                />
-                                            </div>
-                                        </div>
-                                        {formData.investment_type === 'rd' && (
-                                            <div>
-                                                <label className={darkTheme.label}>Monthly Deposit</label>
-                                                <input
-                                                    type="number" step="0.01"
-                                                    value={formData.monthly_deposit || ''}
-                                                    onChange={(e) => setFormData({ ...formData, monthly_deposit: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder="Recurring amount"
-                                                />
-                                            </div>
-                                        )}
-
-                                        {formData.id && (
-                                            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-xs text-blue-300">
-                                                💡 Principal investments are managed via <b>Lots</b>.
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-
-                                {(formData.investment_type === 'nps' || formData.investment_type === 'ppf' || formData.investment_type === 'pf') && (
-                                    <>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>
-                                                    {formData.investment_type === 'nps' ? 'Fund Manager' : 'Employer / Bank'}
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={formData.bank_name || ''}
-                                                    onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
-                                                    className={darkTheme.input}
-                                                    placeholder={formData.investment_type === 'nps' ? 'e.g., SBI, HDFC' : 'e.g., TCS, Post Office'}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className={darkTheme.label}>Interest Rate (%)</label>
-                                                <input
-                                                    type="number" step="0.01"
-                                                    value={formData.interest_rate || ((formData.investment_type === 'ppf' || formData.investment_type === 'pf') ? 7.1 : '')}
-                                                    onChange={(e) => setFormData({ ...formData, interest_rate: parseFloat(e.target.value) })}
-                                                    className={darkTheme.input}
-                                                    placeholder={(formData.investment_type === 'ppf' || formData.investment_type === 'pf') ? '7.1' : '---'}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={darkTheme.label}>Opening Date</label>
-                                                <input
-                                                    type="date"
-                                                    value={formData.opening_date || ''}
-                                                    onChange={(e) => setFormData({ ...formData, opening_date: e.target.value })}
-                                                    className={darkTheme.input}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className={darkTheme.label}>Maturity Date</label>
-                                                <input
-                                                    type="date"
-                                                    value={formData.maturity_date || ''}
-                                                    onChange={(e) => setFormData({ ...formData, maturity_date: e.target.value })}
-                                                    className={darkTheme.input}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {formData.investment_type === 'nps' && (
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className={darkTheme.label}>Scheme ID (for NAV)</label>
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="text"
-                                                            value={formData.provider_symbol || ''}
-                                                            onChange={(e) => setFormData({ ...formData, provider_symbol: e.target.value })}
-                                                            className={darkTheme.input + " flex-1"}
-                                                            placeholder="e.g., SM001001"
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleFetchNPSNAV}
-                                                            className="px-3 bg-emerald-800 rounded text-emerald-300 hover:bg-emerald-700 text-sm"
-                                                            disabled={fetchingPrice || !formData.provider_symbol}
-                                                            title="Fetch NPS NAV"
-                                                        >
-                                                            {fetchingPrice ? '...' : '📡 NAV'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className={darkTheme.label}>Current NAV</label>
-                                                    <input
-                                                        type="number" step="0.0001"
-                                                        value={formData.current_price || ''}
-                                                        onChange={(e) => setFormData({ ...formData, current_price: parseFloat(e.target.value) })}
-                                                        className={darkTheme.input}
-                                                        placeholder="₹xx.xxxx"
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {formData.id && (
-                                            <div className="mt-4 p-3 bg-emerald-900/20 border border-emerald-800/50 rounded-lg text-xs text-emerald-300">
-                                                💡 Contributions are managed via <b>Lots</b>. Use "+ Add" button on the card to record deposits.
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-
-                                <div>
-                                    <label className={darkTheme.label}>Notes</label>
-                                    <textarea
-                                        value={formData.notes || ''}
-                                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                        className={darkTheme.textarea}
-                                        rows={2}
-                                    />
-                                </div>
-
-                                <div className="flex justify-end gap-2 pt-4">
-                                    <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>Cancel</button>
-                                    <button type="submit" className={darkTheme.btnPrimary}>{formData.id ? 'Update' : 'Create'}</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
-            {
-                showLotForm && (
-                    <div className={darkTheme.modalOverlayTop}>
-                        <div className={darkTheme.modalContent}>
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className={darkTheme.modalTitle}>Record Buy / Lot</h2>
-                                <button onClick={() => setShowLotForm(false)} className="text-slate-400 hover:text-white">✕</button>
-                            </div>
-                            <form onSubmit={handleLotSubmit} className="space-y-4">
-                                {(() => {
-                                    const inv = summaries.find(s => s.investment.id === lotFormData.investment_id)?.investment;
-                                    const isMarket = inv?.investment_type === 'stock' || inv?.investment_type === 'mf';
-                                    
-                                    // Make variables available by expanding the scope or returning the whole form
-                                    return (
-                                        <>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className={darkTheme.label}>{isMarket ? 'Quantity *' : 'Quantity / Multiplier *'}</label>
-                                                    <input
-                                                        type="number" step="0.000001" required
-                                                        value={lotFormData.quantity ? Number(lotFormData.quantity.toFixed(4)) : ''}
-                                                        onChange={(e) => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })}
-                                                        className={darkTheme.input}
-                                                        placeholder={isMarket ? "Units bought" : "Default 1"}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className={darkTheme.label}>{isMarket ? 'Price per Unit *' : 'Principal Amount *'}</label>
-                                                    <input
-                                                        type="number" step="0.000001" required
-                                                        value={lotFormData.price_per_unit ? Number(lotFormData.price_per_unit.toFixed(4)) : ''}
-                                                        onChange={(e) => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })}
-                                                        className={darkTheme.input}
-                                                        placeholder={isMarket ? "Cost per share" : "Invested amount"}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className={darkTheme.label}>{isMarket ? 'Total Amount Paid (Bank)' : 'Total Principal Paid'}</label>
-                                                    <input
-                                                        type="number" step="0.01"
-                                                        value={bankAmount}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            setBankAmount(val);
-                                                            const total = parseFloat(val) || 0;
-                                                            const subtotal = (lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0);
-                                                            const calculatedCharges = Math.max(0, total - subtotal);
-                                                setLotFormData({ ...lotFormData, charges: parseFloat(calculatedCharges.toFixed(4)) });
-                                                        }}
-                                                        className={darkTheme.input + " border-blue-500/30"}
-                                                        placeholder="Total debited from bank"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className={darkTheme.label}>Charges (Auto-calculated)</label>
-                                                    <input
-                                                        type="number" step="0.000001"
-                                                        value={lotFormData.charges ? Number(lotFormData.charges.toFixed(4)) : ''}
-                                                        onChange={(e) => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })}
-                                                        className={darkTheme.input + " bg-slate-800/50"}
-                                                        placeholder="Brokerage/Tax"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </>
-                                    );
-                                })()}
-
-
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className={darkTheme.label}>Date</label>
-                                        <input
-                                            type="date" required
-                                            value={lotFormData.date.split(' ')[0]}
-                                            onChange={(e) => setLotFormData({ ...lotFormData, date: e.target.value })}
-                                            className={darkTheme.input}
-                                        />
                                     </div>
-                                    <div>
-                                        <label className={darkTheme.label}>Lot Type</label>
-                                        <select
-                                            value={lotFormData.lot_type}
-                                            onChange={(e) => setLotFormData({ ...lotFormData, lot_type: e.target.value as 'buy' | 'sell' })}
-                                            className={darkTheme.input}
-                                        >
-                                            <option value="buy">Buy / Deposit</option>
-                                            <option value="sell">Sell / Withdrawal</option>
-                                        </select>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-400">Opening Date</label>
+                                            <input 
+                                                type="date" 
+                                                required 
+                                                value={formData.opening_date || ''} 
+                                                onChange={e => setFormData({ ...formData, opening_date: e.target.value })} 
+                                                className={darkTheme.input} 
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-400">Tenure (Months)</label>
+                                            <input 
+                                                type="number" 
+                                                required 
+                                                value={formData.tenure_months || ''} 
+                                                onChange={e => setFormData({ ...formData, tenure_months: parseInt(e.target.value) })} 
+                                                className={darkTheme.input} 
+                                            />
+                                        </div>
                                     </div>
-                                </div>
-
-                                <div className="bg-slate-800/30 p-3 rounded text-xs text-slate-400">
-                                    <div className="flex justify-between mb-1">
-                                        <span>Subtotal (Qty * Price):</span>
-                                        <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0))}</span>
-                                    </div>
-                                    <div className="flex justify-between font-bold text-slate-200">
-                                        <span>Total Investment Value:</span>
-                                        <span>{formatCurrency((lotFormData.quantity || 0) * (lotFormData.price_per_unit || 0) + (lotFormData.charges || 0))}</span>
-                                    </div>
-                                    <p className="mt-2 text-[10px] text-slate-500 italic">
-                                        * Enter Quantity and Price first, then the Total Bank Amount to auto-calculate charges.
-                                    </p>
-                                </div>
-
-                                <div className="flex justify-end gap-2 pt-4">
-                                    <button type="button" onClick={() => {
-                                        setShowLotForm(false);
-                                        setEditingLotId(null);
-                                    }} className={darkTheme.btnCancel}>Cancel</button>
-                                    <button type="submit" className={darkTheme.btnPrimary}>{editingLotId ? 'Update Lot' : 'Record Lot'}</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* View Lots Modal */}
-            {showViewLots && viewLotsSummary && (
-                <div className={darkTheme.modalOverlay}>
-                    <div className={darkTheme.modalContentLarge}>
-                        <h2 className={darkTheme.modalTitle}>
-                            Investment Lots - {viewLotsSummary.investment.name}
-                        </h2>
-
-                        <div className="mb-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                            <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                    <span className="text-slate-500">Current Price:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.investment.current_price || 0)}</span>
-                                </div>
-                                <div>
-                                    <span className="text-slate-500">Total Units:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.total_units)}</span>
-                                </div>
-                                <div>
-                                    <span className="text-slate-500">Avg Buy Price:</span>
-                                    <span className="ml-2 text-slate-200 font-mono">{formatUnits(viewLotsSummary.avg_buy_price)}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                            {viewLotsSummary.lots.length > 0 ? (
-                                <table className="w-full text-sm text-left text-slate-300">
-                                    <thead className="text-slate-500 uppercase text-xs border-b border-slate-700 sticky top-0 bg-slate-900">
-                                        <tr>
-                                            <th className="py-3 px-2">Date</th>
-                                            <th className="py-3 px-2 text-right">Quantity</th>
-                                            <th className="py-3 px-2 text-right">Price/Unit</th>
-                                            <th className="py-3 px-2 text-right">Charges</th>
-                                            <th className="py-3 px-2 text-right">Gain/Loss</th>
-                                            <th className="py-3 px-2 text-right"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {viewLotsSummary.lots.map(lot => {
-                                            const lotCost = lot.quantity * lot.price_per_unit + lot.charges;
-                                            const lotValue = lot.quantity * (viewLotsSummary.investment.current_price || 0);
-                                            const lotGain = lotValue - lotCost;
-                                            return (
-                                                <tr key={lot.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
-                                                    <td className="py-3 px-2 font-mono text-blue-400">{lot.date.split(' ')[0]}</td>
-                                                    <td className="py-3 px-2 text-right font-medium font-mono">{formatUnits(lot.quantity)}</td>
-                                                    <td className="py-3 px-2 text-right font-mono">{formatUnits(lot.price_per_unit)}</td>
-                                                    <td className="py-3 px-2 text-right text-slate-500">{formatCurrency(lot.charges)}</td>
-                                                    <td className={`py-3 px-2 text-right font-bold ${lotGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                        {lotGain >= 0 ? '+' : ''}{formatCurrency(lotGain)}
-                                                    </td>
-                                                    <td className="py-3 px-2 text-right">
-                                                        <button
-                                                            onClick={() => handleEditLot(lot)}
-                                                            className="text-slate-600 hover:text-blue-400 text-lg mr-3"
-                                                            title="Edit Lot"
-                                                        >
-                                                            ✏️
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteLot(lot.id!)}
-                                                            className="text-slate-600 hover:text-red-400 text-lg"
-                                                            title="Delete Lot"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            ) : (
-                                <div className="text-center py-12">
-                                    <p className="text-slate-500 italic mb-2">No lots recorded yet.</p>
-                                    <p className="text-xs text-slate-600">Click "+ Buy" to add your first lot.</p>
+                                    {formData.investment_type === 'fd' && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs text-slate-400">Compounding</label>
+                                            <select 
+                                                value={formData.compounding} 
+                                                onChange={e => setFormData({ ...formData, compounding: e.target.value as any })} 
+                                                className={darkTheme.input}
+                                            >
+                                                <option value="monthly">Monthly</option>
+                                                <option value="quarterly">Quarterly</option>
+                                                <option value="yearly">Yearly</option>
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                        </div>
 
-                        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-700">
-                            <button
-                                onClick={() => setShowViewLots(false)}
-                                className={darkTheme.btnCancel}
-                            >
-                                Close
-                            </button>
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>Cancel</button>
+                                <button type="submit" className={darkTheme.btnPrimary}>Save</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Lot Modal */}
+            {showLotForm && (
+                <div className={darkTheme.modalOverlayTop}>
+                    <div className={darkTheme.modalContent}>
+                        <h2 className={darkTheme.modalTitle}>{editingLotId ? 'Edit Lot' : 'Add Lot'}</h2>
+                        <form onSubmit={handleLotSubmit} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                {((viewLotsSummary?.investment.investment_type || formData.investment_type) === 'stock' || (viewLotsSummary?.investment.investment_type || formData.investment_type) === 'mf') ? (
+                                    <>
+                                        <div>
+                                            <label className="block text-xs mb-1">Quantity</label>
+                                            <input type="number" step="any" value={lotFormData.quantity} onChange={e => setLotFormData({ ...lotFormData, quantity: parseFloat(e.target.value) })} className={darkTheme.input} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs mb-1">Price per Unit</label>
+                                            <input type="number" step="any" value={lotFormData.price_per_unit} onChange={e => setLotFormData({ ...lotFormData, price_per_unit: parseFloat(e.target.value) })} className={darkTheme.input} />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="col-span-2">
+                                        <label className="block text-xs mb-1">Deposit Amount</label>
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={lotFormData.quantity === 1 ? lotFormData.price_per_unit : lotFormData.quantity} 
+                                            onChange={e => setLotFormData({ 
+                                                ...lotFormData, 
+                                                quantity: parseFloat(e.target.value),
+                                                price_per_unit: 1 
+                                            })} 
+                                            className={darkTheme.input} 
+                                            placeholder="10000"
+                                        />
+                                    </div>
+                                )}
+                                <div className="col-span-2 grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs mb-1">Date</label>
+                                        <input type="date" value={lotFormData.date} onChange={e => setLotFormData({ ...lotFormData, date: e.target.value })} className={darkTheme.input} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs mb-1">Charges (Taxes, Fees)</label>
+                                        <input type="number" step="any" value={lotFormData.charges} onChange={e => setLotFormData({ ...lotFormData, charges: parseFloat(e.target.value) })} className={darkTheme.input} placeholder="0.00" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <button type="button" onClick={() => setShowLotForm(false)} className={darkTheme.btnCancel}>Cancel</button>
+                                <button type="submit" className={darkTheme.btnPrimary}>Confirm</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showViewLots && viewLotsSummary && (
+                <div className={darkTheme.modalOverlay}>
+                <div className={darkTheme.modalContentLarge}>
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h2 className="text-xl font-bold text-white">{viewLotsSummary.investment.name}</h2>
+                                <p className="text-slate-400 text-xs uppercase tracking-wider">{viewLotsSummary.investment.investment_type} Holdings</p>
+                            </div>
+                            <button onClick={() => handleAddLot(viewLotsSummary.investment.id!, viewLotsSummary.investment.investment_type)} className={darkTheme.btnPrimary}>+ Buy</button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm text-slate-300">
+                                <thead>
+                                    <tr className="text-slate-500 border-b border-slate-700">
+                                        <th className="py-2">Date</th>
+                                        <th className="py-2 text-right">{viewLotsSummary.investment.investment_type === 'stock' || viewLotsSummary.investment.investment_type === 'mf' ? 'Units' : 'Deposit'}</th>
+                                        <th className="py-2 text-right">{viewLotsSummary.investment.investment_type === 'stock' || viewLotsSummary.investment.investment_type === 'mf' ? 'Price' : 'Investment'}</th>
+                                        <th className="py-2 text-right">Total</th>
+                                        <th className="py-2 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {viewLotsSummary.lots.map(lot => (
+                                        <tr key={lot.id} className="border-b border-slate-800">
+                                            <td className="py-2">{lot.date}</td>
+                                            <td className="py-2 text-right">{lot.quantity}</td>
+                                            <td className="py-2 text-right">{formatCurrency(lot.price_per_unit)}</td>
+                                            <td className="py-2 text-right">{formatCurrency(lot.quantity * lot.price_per_unit + lot.charges)}</td>
+                                            <td className="py-2 text-center">
+                                                <button onClick={() => handleEditLot(lot)} className="text-blue-400 mr-3">✏️</button>
+                                                <button onClick={() => handleDeleteLot(lot.id!)} className="text-rose-400">🗑️</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <button onClick={() => setShowViewLots(false)} className={darkTheme.btnCancel}>Close</button>
                         </div>
                     </div>
                 </div>
@@ -1300,3 +857,4 @@ export default function Investments() {
         </div>
     );
 }
+

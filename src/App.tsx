@@ -6,6 +6,7 @@ import Transactions from './screens/Transactions';
 import Accounts from './screens/Accounts';
 import Categories from './screens/Categories';
 import Projects from './screens/Projects';
+import Investments from './screens/Investments';
 import Reports from './screens/Reports';
 import IncomeBreakdown from './screens/IncomeBreakdown';
 import Estimator from './screens/Estimator';
@@ -26,7 +27,7 @@ function App() {
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/categories" element={<Categories />} />
                     <Route path="/projects" element={<Projects />} />
-
+                    <Route path="/investments" element={<Investments />} />
                     <Route path="/reports" element={<Reports />} />
 
                     <Route path="/income-breakdown" element={<IncomeBreakdown />} />

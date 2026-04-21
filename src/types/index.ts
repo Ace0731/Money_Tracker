@@ -6,6 +6,7 @@ export interface Account {
     current_balance?: number;
     parent_id?: number;
     bucket_role?: 'emergency' | 'asset' | 'travel' | 'none';
+    is_investment_active?: boolean;
     notes?: string;
 }
 

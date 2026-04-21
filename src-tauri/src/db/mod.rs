@@ -403,6 +403,7 @@ pub fn initialize_database() -> Result<DbConnection> {
     // 31. Add parent_id and bucket_role to accounts (Consolidated & Safe)
     let _ = conn.execute("ALTER TABLE accounts ADD COLUMN parent_id INTEGER REFERENCES accounts(id)", []);
     let _ = conn.execute("ALTER TABLE accounts ADD COLUMN bucket_role TEXT DEFAULT 'none'", []);
+    let _ = conn.execute("ALTER TABLE accounts ADD COLUMN is_investment_active INTEGER DEFAULT 1", []);
     
     // We need a schema swap to update the CHECK constraint for 'bucket' type without losing new columns
     let _ = conn.execute_batch(
@@ -415,12 +416,13 @@ pub fn initialize_database() -> Result<DbConnection> {
              opening_balance REAL NOT NULL,
              parent_id INTEGER REFERENCES accounts(id),
              bucket_role TEXT DEFAULT 'none',
+             is_investment_active INTEGER DEFAULT 1,
              notes TEXT,
              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
          );
          -- Copy everything including the new columns we just ensured exist
-         INSERT OR IGNORE INTO accounts_v2 (id, name, type, opening_balance, parent_id, bucket_role, notes, created_at) 
-         SELECT id, name, type, opening_balance, parent_id, bucket_role, notes, created_at FROM accounts;
+         INSERT OR IGNORE INTO accounts_v2 (id, name, type, opening_balance, parent_id, bucket_role, is_investment_active, notes, created_at) 
+         SELECT id, name, type, opening_balance, parent_id, bucket_role, COALESCE(is_investment_active, 1), notes, created_at FROM accounts;
          
          DROP TABLE accounts;
          ALTER TABLE accounts_v2 RENAME TO accounts;

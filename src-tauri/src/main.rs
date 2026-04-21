@@ -60,6 +60,7 @@ fn main() {
             get_investment_benchmark,
             set_investment_benchmark,
             get_investment_benchmark_report,
+            update_fixed_income_daily,
             // Budget & Scheduled Transactions
             get_scheduled_transactions,
             create_scheduled_transaction,
