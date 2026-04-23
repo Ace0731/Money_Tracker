@@ -23,7 +23,6 @@ const navigationGroups = [
         items: [
             { name: 'Projects', path: '/projects', icon: '📋' },
             { name: 'Breakdown', path: '/income-breakdown', icon: '⏱️' },
-            { name: 'Estimator', path: '/estimator', icon: '🧠' },
         ]
     },
     {

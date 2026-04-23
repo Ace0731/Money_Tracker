@@ -9,7 +9,6 @@ import Projects from './screens/Projects';
 import Investments from './screens/Investments';
 import Reports from './screens/Reports';
 import IncomeBreakdown from './screens/IncomeBreakdown';
-import Estimator from './screens/Estimator';
 import Settings from './screens/Settings';
 
 function App() {
@@ -31,7 +30,6 @@ function App() {
                     <Route path="/reports" element={<Reports />} />
 
                     <Route path="/income-breakdown" element={<IncomeBreakdown />} />
-                    <Route path="/estimator" element={<Estimator />} />
                     <Route path="/settings" element={<Settings />} />
                 </Routes>
             </Layout>
