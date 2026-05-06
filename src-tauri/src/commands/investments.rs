@@ -559,17 +559,9 @@ pub fn update_fixed_income_daily(db: State<DbConnection>) -> Result<(), String> 
     }).map_err(|e| e.to_string())?;
     
     let now = chrono::Local::now();
-    let today_str = now.format("%Y-%m-%d").to_string();
     
     for inv in investments {
-        let (id, _name, inv_type, principal, rate, opening_date, monthly_deposit, _tenure, compounding, _current_price, last_updated) = inv.map_err(|e| e.to_string())?;
-        
-        // Skip if already updated today
-        if let Some(last) = last_updated {
-            if last.starts_with(&today_str) {
-                continue;
-            }
-        }
+        let (id, _name, _inv_type, _principal, rate, _opening_date, _monthly_deposit, _tenure, compounding, _current_price, _last_updated) = inv.map_err(|e| e.to_string())?;
         
         let rate = rate.unwrap_or(0.0) / 100.0;
         let compounding_freq = match compounding.as_deref() {
@@ -578,23 +570,50 @@ pub fn update_fixed_income_daily(db: State<DbConnection>) -> Result<(), String> 
             _ => 4.0, // default quarterly
         };
         
-        // Fetch all lots for this investment to calculate realistic valuation
+        let mut total_valuation = 0.0;
+
+        // 1. Fetch all lots for this investment
         let mut stmt_lots = conn.prepare("SELECT quantity, price_per_unit, date FROM investment_lots WHERE investment_id = ?1").map_err(|e| e.to_string())?;
         let lots_iter = stmt_lots.query_map(params![id], |row| {
             Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, String>(2)?))
         }).map_err(|e| e.to_string())?;
 
-        let mut total_valuation = 0.0;
         for lot in lots_iter {
             if let Ok((qty, price, lot_date)) = lot {
                 let principal = qty * price;
-                // Parse date (handling both possible formats)
                 let l_dt = chrono::NaiveDateTime::parse_from_str(&lot_date, "%Y-%m-%d %H:%M:%S")
                     .map(|dt| dt.date())
                     .or_else(|_| chrono::NaiveDate::parse_from_str(&lot_date, "%Y-%m-%d"));
 
                 if let Ok(l_date) = l_dt {
                     let days_elapsed = now.date_naive().signed_duration_since(l_date).num_days() as f64;
+                    if days_elapsed > 0.0 {
+                        let t = days_elapsed / 365.0;
+                        total_valuation += principal * (1.0 + rate / compounding_freq).powf(compounding_freq * t);
+                    } else {
+                        total_valuation += principal;
+                    }
+                } else {
+                    total_valuation += principal;
+                }
+            }
+        }
+
+        // 2. Fetch all transactions for this investment (e.g. SIP installments logged as transactions)
+        let mut stmt_txs = conn.prepare("SELECT amount, date FROM transactions WHERE investment_id = ?1 AND direction = 'transfer'").map_err(|e| e.to_string())?;
+        let txs_iter = stmt_txs.query_map(params![id], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| e.to_string())?;
+
+        for tx_item in txs_iter {
+            if let Ok((amt, tx_date)) = tx_item {
+                let principal = amt;
+                let t_dt = chrono::NaiveDateTime::parse_from_str(&tx_date, "%Y-%m-%d %H:%M:%S")
+                    .map(|dt| dt.date())
+                    .or_else(|_| chrono::NaiveDate::parse_from_str(&tx_date, "%Y-%m-%d"));
+
+                if let Ok(t_date) = t_dt {
+                    let days_elapsed = now.date_naive().signed_duration_since(t_date).num_days() as f64;
                     if days_elapsed > 0.0 {
                         let t = days_elapsed / 365.0;
                         total_valuation += principal * (1.0 + rate / compounding_freq).powf(compounding_freq * t);

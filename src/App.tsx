@@ -13,7 +13,15 @@ import Settings from './screens/Settings';
 
 function App() {
     useEffect(() => {
-        console.log('Money Tracker initialized');
+        // Disable right-click context menu
+        const handleContextMenu = (e: MouseEvent) => {
+            e.preventDefault();
+        };
+        document.addEventListener('contextmenu', handleContextMenu);
+        
+        return () => {
+            document.removeEventListener('contextmenu', handleContextMenu);
+        };
     }, []);
 
     return (

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Transaction, Account, Category, Client, Project, Tag, Investment } from '../types';
+import type { Transaction, Account, Category, Client, Project, Tag } from '../types';
 import type { TransactionWithDetails, TransactionBalances } from '../types/transactions';
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
@@ -39,7 +39,6 @@ export default function Transactions() {
     const [clients, setClients] = useState<Client[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [tags, setTags] = useState<Tag[]>([]);
-    const [investments, setInvestments] = useState<Investment[]>([]);
     const [goals, setGoals] = useState<any[]>([]);
 
     // Form state
@@ -52,7 +51,6 @@ export default function Transactions() {
         category_id: 0,
         client_id: undefined,
         project_id: undefined,
-        investment_id: undefined,
         goal_id: undefined,
         notes: '',
     });
@@ -105,20 +103,18 @@ export default function Transactions() {
 
     const loadReferenceData = async () => {
         try {
-            const [accountsData, categoriesData, clientsData, projectsData, tagsData, investmentsData] = await Promise.all([
+            const [accountsData, categoriesData, clientsData, projectsData, tagsData] = await Promise.all([
                 execute<Account[]>('get_accounts'),
                 execute<Category[]>('get_categories'),
                 execute<Client[]>('get_clients'),
                 execute<Project[]>('get_projects'),
                 execute<Tag[]>('get_tags'),
-                execute<Investment[]>('get_investments'),
             ]);
             setAccounts(accountsData);
             setCategories(categoriesData);
             setClients(clientsData);
             setProjects(projectsData);
             setTags(tagsData);
-            setInvestments(investmentsData);
             
             const goalsData = await execute<any[]>('get_goals');
             setGoals(goalsData);
@@ -209,7 +205,6 @@ export default function Transactions() {
             category_id: 0,
             client_id: undefined,
             project_id: undefined,
-            investment_id: undefined,
             goal_id: undefined,
             notes: '',
         });
@@ -445,7 +440,6 @@ export default function Transactions() {
                                 <td className={darkTheme.tableCell}>
                                     {transaction.client_name && <div className="text-blue-400">{transaction.client_name}</div>}
                                     {transaction.project_name && <div className="text-sm text-slate-500">{transaction.project_name}</div>}
-                                    {transaction.investment_name && <div className="text-xs text-purple-400">🔗 {transaction.investment_name}</div>}
                                     {transaction.goal_name && <div className="text-xs text-blue-400">🎯 {transaction.goal_name}</div>}
                                 </td>
                                 <td className={darkTheme.tableCell}>
@@ -661,35 +655,19 @@ export default function Transactions() {
                                     </select>
                                 </div>
 
-                                {formData.client_id ? (
-                                    <div>
-                                        <label className={darkTheme.label}>Project (Optional)</label>
-                                        <select
-                                            value={formData.project_id || ''}
-                                            onChange={(e) => setFormData({ ...formData, project_id: e.target.value ? parseInt(e.target.value) : undefined })}
-                                            className={darkTheme.select}
-                                        >
-                                            <option value="">None</option>
-                                            {filteredProjects.map((project) => (
-                                                <option key={project.id} value={project.id}>{project.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                ) : (
-                                    <div>
-                                        <label className={darkTheme.label}>Link to Investment (Optional)</label>
-                                        <select
-                                            value={formData.investment_id || ''}
-                                            onChange={(e) => setFormData({ ...formData, investment_id: e.target.value ? parseInt(e.target.value) : undefined })}
-                                            className={darkTheme.select}
-                                        >
-                                            <option value="">None</option>
-                                            {investments.map((inv) => (
-                                                <option key={inv.id} value={inv.id}>{inv.name} ({inv.investment_type})</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
+                                <div>
+                                    <label className={darkTheme.label}>Project (Optional)</label>
+                                    <select
+                                        value={formData.project_id || ''}
+                                        onChange={(e) => setFormData({ ...formData, project_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                        className={darkTheme.select}
+                                    >
+                                        <option value="">None</option>
+                                        {filteredProjects.map((project) => (
+                                            <option key={project.id} value={project.id}>{project.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             {/* Tags */}

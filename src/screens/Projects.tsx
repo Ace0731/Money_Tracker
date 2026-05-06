@@ -371,6 +371,20 @@ export default function Projects() {
                                     <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-bold">
                                         ⏱️ {project.logged_hours || 0}h Logged
                                     </span>
+                                    {project.expected_amount && project.hourly_rate && (
+                                        <span className="text-[10px] px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full font-bold">
+                                            🎯 {(project.expected_amount / project.hourly_rate).toFixed(1)}h Allocated
+                                        </span>
+                                    )}
+                                    {project.expected_amount && project.hourly_rate && project.logged_hours && project.logged_hours > 0 && (
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                            ((project.expected_amount / project.hourly_rate) / project.logged_hours) >= 1 
+                                            ? 'bg-green-500/20 text-green-400' 
+                                            : 'bg-red-500/20 text-red-400'
+                                        }`}>
+                                            ⚡ {(((project.expected_amount / project.hourly_rate) / project.logged_hours) * 100).toFixed(0)}% Eff.
+                                        </span>
+                                    )}
                                     {project.hourly_rate ? (
                                         <div className="flex gap-2">
                                             <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded-full border border-slate-700 font-mono">
@@ -443,6 +457,9 @@ export default function Projects() {
                                     <p className="text-sm text-slate-500 mb-4">{getClientName(project.client_id)}</p>
                                     <div className="text-xs text-slate-500 italic">
                                         Received: {formatCurrency(project.received_amount || 0)}
+                                        {project.expected_amount && project.hourly_rate && (
+                                            <span className="ml-2">• {(project.expected_amount / project.hourly_rate).toFixed(1)}h Allocated</span>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -464,6 +481,8 @@ export default function Projects() {
                                             <th className="px-4 py-3 border-b border-slate-700">Earned</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Received</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Actual Rate</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Allocated</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Eff.</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Hours</th>
                                             <th className="px-4 py-3 border-b border-slate-700 text-right">Actions</th>
                                         </tr>
@@ -488,6 +507,19 @@ export default function Projects() {
                                                 <td className="px-4 py-3 text-slate-200 text-sm">
                                                     {project.logged_hours && project.logged_hours > 0
                                                         ? formatCurrency((project.received_amount || 0) / project.logged_hours)
+                                                        : '---'}
+                                                </td>
+                                                <td className="px-4 py-3 text-purple-400 text-sm">
+                                                    {project.expected_amount && project.hourly_rate 
+                                                        ? (project.expected_amount / project.hourly_rate).toFixed(1) + 'h'
+                                                        : '---'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm">
+                                                    {project.expected_amount && project.hourly_rate && project.logged_hours && project.logged_hours > 0
+                                                        ? (() => {
+                                                            const eff = ((project.expected_amount / project.hourly_rate) / project.logged_hours) * 100;
+                                                            return <span className={eff >= 100 ? 'text-green-400' : 'text-red-400'}>{eff.toFixed(0)}%</span>;
+                                                        })()
                                                         : '---'}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400 text-sm">{project.logged_hours || 0}h</td>
@@ -539,6 +571,9 @@ export default function Projects() {
                                                     <p className="text-sm text-slate-500 mb-4">{getClientName(project.client_id)}</p>
                                                     <div className="text-xs text-slate-500 italic">
                                                         Value: {formatCurrency(project.expected_amount || 0)}
+                                                        {project.expected_amount && project.hourly_rate && (
+                                                            <span className="ml-2">• {(project.expected_amount / project.hourly_rate).toFixed(1)}h Allocated</span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))}
@@ -982,10 +1017,53 @@ export default function Projects() {
                                     )}
                                 </div>
                                 <div className="mt-4 pt-3 border-t border-slate-700/50">
-                                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Projects</div>
-                                    <div className="text-sm font-bold text-slate-300 mt-1">
-                                        {projects.filter(p => p.client_id === client.id).length} project(s)
+                                    <div className="flex justify-between items-center mb-2">
+                                        <div>
+                                            <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Projects</div>
+                                            <div className="text-sm font-bold text-slate-300">
+                                                {projects.filter(p => p.client_id === client.id).length} Active
+                                            </div>
+                                        </div>
+                                        {(() => {
+                                            const clientProjects = projects.filter(p => p.client_id === client.id);
+                                            const totalValue = clientProjects.reduce((sum, p) => sum + (p.expected_amount || 0), 0);
+                                            const totalReceived = clientProjects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                                            const performance = totalValue > 0 ? (totalReceived / totalValue) * 100 : 0;
+                                            
+                                            return (
+                                                <div className="text-right">
+                                                    <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Realization</div>
+                                                    <div className={`text-sm font-bold ${performance >= 90 ? 'text-green-400' : performance > 50 ? 'text-blue-400' : 'text-orange-400'}`}>
+                                                        {performance.toFixed(1)}%
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
+                                    
+                                    {(() => {
+                                        const clientProjects = projects.filter(p => p.client_id === client.id);
+                                        const totalValue = clientProjects.reduce((sum, p) => sum + (p.expected_amount || 0), 0);
+                                        const totalReceived = clientProjects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                                        const performance = totalValue > 0 ? (totalReceived / totalValue) * 100 : 0;
+                                        
+                                        if (totalValue === 0) return null;
+
+                                        return (
+                                            <>
+                                                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden border border-white/5">
+                                                    <div 
+                                                        className={`h-full transition-all duration-700 ${performance >= 90 ? 'bg-green-500' : performance > 50 ? 'bg-blue-500' : 'bg-orange-500'}`}
+                                                        style={{ width: `${Math.min(performance, 100)}%` }}
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between text-[10px] text-slate-500 mt-2 font-medium">
+                                                    <span className="text-green-400/80">{formatCurrency(totalReceived)}</span>
+                                                    <span>Target: {formatCurrency(totalValue)}</span>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         ))}
