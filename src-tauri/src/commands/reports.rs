@@ -52,7 +52,8 @@ pub struct OverallStats {
     pub transaction_count: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ReportFilters {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
@@ -111,7 +112,8 @@ pub fn get_monthly_summary(
 ) -> Result<Vec<MonthlySummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     
-    // Query for income, expense, and investment per month
+    let has_date_filter = filters.start_date.is_some() || filters.end_date.is_some();
+
     let mut query = String::from("
         SELECT 
             strftime('%Y-%m', t.date) as month,
@@ -120,10 +122,14 @@ pub fn get_monthly_summary(
             SUM(CASE WHEN COALESCE(c.is_investment, 0) = 1 THEN t.amount ELSE 0 END) as investment
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE strftime('%Y', t.date) = ?
+        WHERE 1=1
     ");
-    
-    let mut params_vec: Vec<rusqlite::types::Value> = vec![year.to_string().into()];
+
+    let mut params_vec: Vec<rusqlite::types::Value> = vec![];
+    if !has_date_filter {
+        query.push_str(" AND strftime('%Y', t.date) = ?");
+        params_vec.push(year.to_string().into());
+    }
     apply_filters(&mut query, &filters, &mut params_vec);
     
     query.push_str(" GROUP BY month ORDER BY month");

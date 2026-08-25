@@ -300,13 +300,51 @@ export default function Projects() {
             {loading && <div className={darkTheme.loading}>Loading...</div>}
 
             {/* ─── PROJECTS TAB ─── */}
-            {activeTab === 'projects' && (
+            {activeTab === 'projects' && (() => {
+                const totalProjValue = projects.reduce((sum, p) => sum + (p.expected_amount || 0), 0);
+                const totalEffortValue = projects.reduce((sum, p) => sum + ((p.logged_hours || 0) * (p.hourly_rate || 0)), 0);
+                const totalLoggedHours = projects.reduce((sum, p) => sum + (p.logged_hours || 0), 0);
+                const totalReceivedAmount = projects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                const actualHourlyRate = totalLoggedHours > 0 ? totalReceivedAmount / totalLoggedHours : 0;
+                const targetHourlyRate = totalLoggedHours > 0 ? totalEffortValue / totalLoggedHours : 0;
+                const overallEfficiency = targetHourlyRate > 0 ? (actualHourlyRate / targetHourlyRate) * 100 : (totalEffortValue > 0 ? (totalReceivedAmount / totalEffortValue) * 100 : 0);
+
+                return (
                 <div className="space-y-8">
-                {/* Active Projects */}
-                <div>
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {projects.filter(p => p.status === 'active' || p.status === 'prospect').map((project) => (
+                    {/* Cumulative Projects & Effort Stats Banner */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                        <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Project Value</div>
+                            <div className="text-2xl font-bold text-blue-400">{formatCurrency(totalProjValue)}</div>
+                            <div className="text-[11px] text-slate-500 mt-1">Total contract value</div>
+                        </div>
+
+                        <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Effort Value</div>
+                            <div className="text-2xl font-bold text-purple-400">{formatCurrency(totalEffortValue)}</div>
+                            <div className="text-[11px] text-slate-500 mt-1">{totalLoggedHours.toFixed(1)}h logged total</div>
+                        </div>
+
+                        <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Actual Hourly Rate</div>
+                            <div className="text-2xl font-bold text-emerald-400">{formatCurrency(actualHourlyRate)}<small className="text-xs text-slate-500">/hr</small></div>
+                            <div className="text-[11px] text-slate-500 mt-1">Realized per logged hour</div>
+                        </div>
+
+                        <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Overall Efficiency</div>
+                            <div className={`text-2xl font-bold ${overallEfficiency >= 100 ? 'text-green-400' : overallEfficiency >= 75 ? 'text-blue-400' : 'text-orange-400'}`}>
+                                {overallEfficiency.toFixed(1)}%
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">Realized vs target rate</div>
+                        </div>
+                    </div>
+
+                    {/* Active Projects */}
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {projects.filter(p => p.status === 'active' || p.status === 'prospect').map((project) => (
                             <div
                                 key={project.id}
                                 className={`${darkTheme.card} p-6 cursor-pointer relative group`}
@@ -590,7 +628,8 @@ export default function Projects() {
                     </div>
                 )}
             </div>
-            )}
+            );
+            })()}
 
             {projects.length === 0 && !loading && activeTab === 'projects' && (
                 <div className={darkTheme.empty}>

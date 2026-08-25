@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.0] - 2026-08-25
+### Added
+- **Account Creation Fixes & Alerts**: Resolved Rust IPC deserialization issues (`is_investment_active`) and added SweetAlert popups for user feedback.
+- **Dashboard Net Worth Plot Chart**: Added interactive multi-series chart for Net Worth, Income, Expenses, and Investments with 6-month & 12-month toggles.
+- **Fiscal Year Standard (April - March)**: Integrated Indian Fiscal Year (`April 1 to March 31`) defaults across Dashboard, Income Breakdown, and Reports screens.
+- **Monthly Average Income**: Integrated Monthly Average Income metrics in top stats and per-category views in Income Breakdown and Reports sections.
+- **Projects & Clients Effort Analytics**: Added cumulative project value, cumulative effort value, actual hourly rate, and efficiency metrics across Projects and Clients screens.
+
 ## [1.7.0] - 2026-02-24
 ### Added
 - **Monthly Decision Maker**: A strict financial logic engine to manage salary and freelance income.

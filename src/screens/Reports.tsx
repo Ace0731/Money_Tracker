@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getFiscalYearRange } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import type { Client, Project } from '../types';
 import BenchmarkTab from '../components/investments/BenchmarkTab';
@@ -120,10 +120,11 @@ export default function Reports() {
     const [clients, setClients] = useState<Client[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
 
-    // Filter State
+    // Filter State - Default to Fiscal Year (April 1 to March 31)
+    const initialFY = getFiscalYearRange();
     const [filters, setFilters] = useState<ReportFilters>({
-        start_date: `${new Date().getFullYear()}-01-01`,
-        end_date: `${new Date().getFullYear()}-12-31`,
+        start_date: initialFY.start_date,
+        end_date: initialFY.end_date,
         client_id: undefined,
         project_id: undefined,
     });
@@ -185,11 +186,11 @@ export default function Reports() {
     };
 
     const handleClearFilters = () => {
-        const year = new Date().getFullYear();
-        setSelectedYear(year);
+        const fy = getFiscalYearRange();
+        setSelectedYear(fy.fyStartYear);
         setFilters({
-            start_date: `${year}-01-01`,
-            end_date: `${year}-12-31`,
+            start_date: fy.start_date,
+            end_date: fy.end_date,
             client_id: undefined,
             project_id: undefined,
         });
@@ -253,6 +254,16 @@ export default function Reports() {
 
     // Current month label for the navigator
     const currentMonthLabel = getMonthLabel(filters.start_date);
+
+    const getReportMonthCount = () => {
+        if (!filters.start_date || !filters.end_date) return 12;
+        const start = new Date(filters.start_date);
+        const end = new Date(filters.end_date);
+        const diff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+        return Math.max(1, diff);
+    };
+    const reportMonthCount = getReportMonthCount();
+    const avgMonthlyIncome = overallStats ? overallStats.total_income / reportMonthCount : 0;
 
     return (
         <div className="p-6">
@@ -359,9 +370,18 @@ export default function Reports() {
             {activeTab === 'visuals' && (
                 <div className="space-y-6">
                     {/* Key Health Metrics */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        {/* Monthly Avg Income */}
+                        <div className={darkTheme.card + " p-5 border-l-4 border-emerald-500 bg-emerald-500/5"}>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monthly Avg Income</div>
+                            <div className="text-2xl font-bold text-emerald-400">
+                                {formatCurrency(avgMonthlyIncome)}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-2">Average over period</div>
+                        </div>
+
                         {/* Financial Runway */}
-                        <div className={`${darkTheme.card} p-6 border-l-4 ${survival.borderClass} ${survival.bgClass}`}>
+                        <div className={`${darkTheme.card} p-5 border-l-4 ${survival.borderClass} ${survival.bgClass}`}>
                             <div className="flex items-center gap-2 text-slate-400 mb-1">
                                 <span className="text-[10px] font-bold uppercase tracking-wider">Survival Time</span>
                                 <div className="group relative">
@@ -378,7 +398,7 @@ export default function Reports() {
                         </div>
 
                         {/* Monthly Burn */}
-                        <div className={darkTheme.card + " p-6 border-l-4 border-red-500"}>
+                        <div className={darkTheme.card + " p-5 border-l-4 border-red-500"}>
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monthly Burn Rate</div>
                             <div className="text-2xl font-bold text-red-400">
                                 {(() => {
@@ -391,7 +411,7 @@ export default function Reports() {
                         </div>
 
                         {/* Savings Rate */}
-                        <div className={darkTheme.card + " p-6 border-l-4 border-blue-500 bg-blue-500/5"}>
+                        <div className={darkTheme.card + " p-5 border-l-4 border-blue-500 bg-blue-500/5"}>
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Savings Efficiency</div>
                             <div className={`text-2xl font-bold ${overallStats?.net_balance && overallStats.total_income > 0 ? (overallStats.net_balance / overallStats.total_income * 100 > 20 ? 'text-green-400' : 'text-blue-400') : 'text-slate-100'}`}>
                                 {overallStats && overallStats.total_income > 0 ? ((overallStats.net_balance / overallStats.total_income) * 100).toFixed(2) + '%' : '0.00%'}
@@ -400,7 +420,7 @@ export default function Reports() {
                         </div>
 
                         {/* Net Worth */}
-                        <div className={darkTheme.card + " p-6 border-l-4 border-cyan-400"}>
+                        <div className={darkTheme.card + " p-5 border-l-4 border-cyan-400"}>
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Total Wealth</div>
                             <div className="text-2xl font-bold text-cyan-400">
                                 {formatCurrency(netWorthTrend.length > 0 ? netWorthTrend[netWorthTrend.length - 1].total : 0)}
@@ -740,12 +760,16 @@ export default function Reports() {
             {activeTab === 'numbers' && (
                 <div className="space-y-6">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         {overallStats && (
                             <>
                                 <div className={darkTheme.card + " p-5"}>
                                     <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Total Income</div>
                                     <div className="text-2xl font-bold text-green-400">{formatCurrency(overallStats.total_income)}</div>
+                                </div>
+                                <div className={darkTheme.card + " p-5 border-l-2 border-emerald-500"}>
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Monthly Avg Income</div>
+                                    <div className="text-2xl font-bold text-emerald-400">{formatCurrency(avgMonthlyIncome)}</div>
                                 </div>
                                 <div className={darkTheme.card + " p-5"}>
                                     <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Total Expense</div>

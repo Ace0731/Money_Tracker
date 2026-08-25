@@ -1,24 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import type { Project } from '../types';
+import {
+    ResponsiveContainer,
+    ComposedChart,
+    Line,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+} from 'recharts';
 
 interface AccountBalance {
     id: number;
     name: string;
     account_type: string;
     balance: number;
-}
-
-interface DashboardGoal {
-    id: number;
-    name: string;
-    bucket_name: string;
-    target_amount: number;
-    current_amount: number;
-    status: string;
 }
 
 interface DashboardData {
@@ -32,12 +33,26 @@ interface DashboardData {
     current_month_net: number;
     active_goals_count: number;
     completed_goals_count: number;
-    goals: DashboardGoal[];
     project_stats?: {
         total_expected: number;
         total_received: number;
         total_pending: number;
     };
+}
+
+interface MonthlySummary {
+    month: string;
+    income: number;
+    expense: number;
+    investment: number;
+    net: number;
+}
+
+interface NetWorthPoint {
+    month: string;
+    cash: number;
+    invested: number;
+    total: number;
 }
 
 function StatCard({ title, amount, icon, color }: { 
@@ -67,16 +82,46 @@ export default function Dashboard() {
     const { execute, loading } = useDatabase();
     const navigate = useNavigate();
     const [data, setData] = useState<DashboardData | null>(null);
+    const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
+    const [netWorthTrend, setNetWorthTrend] = useState<NetWorthPoint[]>([]);
+    const [chartMonths, setChartMonths] = useState<6 | 12>(12);
+
+    const getChartDateRange = (monthsCount: number) => {
+        const today = new Date();
+        const end = today.toISOString().split('T')[0];
+        const startDateObj = new Date(today.getFullYear(), today.getMonth() - monthsCount + 1, 1);
+        const start = startDateObj.toISOString().split('T')[0];
+        return { start, end };
+    };
 
     useEffect(() => {
         loadDashboard();
     }, []);
 
+    useEffect(() => {
+        loadChartMonthlyData(chartMonths);
+    }, [chartMonths]);
+
+    const loadChartMonthlyData = async (monthsCount: number) => {
+        const range = getChartDateRange(monthsCount);
+        const year = new Date().getFullYear();
+        try {
+            const monthly = await execute<MonthlySummary[]>('get_monthly_summary', {
+                year,
+                filters: { start_date: range.start, end_date: range.end }
+            });
+            setMonthlySummary(monthly || []);
+        } catch (error) {
+            console.error('Failed to load monthly summary for chart:', error);
+        }
+    };
+
     const loadDashboard = async () => {
         try {
-            const [dashboardData, projects] = await Promise.all([
+            const [dashboardData, projects, netWorth] = await Promise.all([
                 execute<DashboardData>('get_dashboard_data'),
-                execute<Project[]>('get_projects')
+                execute<Project[]>('get_projects'),
+                execute<NetWorthPoint[]>('get_net_worth_trend'),
             ]);
 
             const stats = projects.reduce((acc, p) => {
@@ -89,10 +134,41 @@ export default function Dashboard() {
             }, { total_expected: 0, total_received: 0, total_pending: 0 });
 
             setData({ ...dashboardData, project_stats: stats });
+            setNetWorthTrend(netWorth || []);
+            await loadChartMonthlyData(chartMonths);
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         }
     };
+
+    const combinedChartData = useMemo(() => {
+        const map = new Map<string, { month: string; net_worth: number; income: number; expense: number; investment: number }>();
+        const range = getChartDateRange(chartMonths);
+        const startMonthStr = range.start.slice(0, 7);
+        const endMonthStr = range.end.slice(0, 7);
+
+        netWorthTrend.forEach(nw => {
+            if (nw.month >= startMonthStr && nw.month <= endMonthStr) {
+                map.set(nw.month, {
+                    month: nw.month,
+                    net_worth: nw.total,
+                    income: 0,
+                    expense: 0,
+                    investment: 0
+                });
+            }
+        });
+
+        monthlySummary.forEach(m => {
+            const existing = map.get(m.month) || { month: m.month, net_worth: 0, income: 0, expense: 0, investment: 0 };
+            existing.income = m.income;
+            existing.expense = m.expense;
+            existing.investment = m.investment;
+            map.set(m.month, existing);
+        });
+
+        return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
+    }, [netWorthTrend, monthlySummary, chartMonths]);
 
     const getAccountIcon = (type: string) => {
         switch (type) {
@@ -109,7 +185,7 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="p-6">
+        <div className="p-6 pb-20">
             <h1 className="text-3xl font-bold mb-6 text-slate-100">Dashboard</h1>
 
             {/* Total Balance */}
@@ -144,45 +220,143 @@ export default function Dashboard() {
                 />
             </div>
 
+            {/* Net Worth & Cash Flow Trend Plot Chart */}
+            <div className="card p-6 bg-slate-800 rounded-xl shadow-lg border border-slate-700 mb-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                            📈 Net Worth & Cash Flow Trend
+                        </h2>
+                        <p className="text-xs text-slate-400 mt-1">Track net worth movement along with Income, Expenses & Investments</p>
+                    </div>
 
-            {/* Financial Goals */}
-            <div className="mb-8">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-slate-100">Financial Goals</h2>
-                    <div className="text-xs text-slate-400 font-medium">
-                        {data.active_goals_count} Active • {data.completed_goals_count} Completed
+                    <div className="flex items-center gap-4">
+                        {/* Legend preview */}
+                        <div className="hidden lg:flex items-center gap-3 text-xs">
+                            <div className="flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block"></span>
+                                <span className="text-slate-300">Net Worth</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>
+                                <span className="text-slate-300">Income</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 rounded-full bg-rose-400 inline-block"></span>
+                                <span className="text-slate-300">Expenses</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block"></span>
+                                <span className="text-slate-300">Investments</span>
+                            </div>
+                        </div>
+
+                        <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                            <button
+                                onClick={() => setChartMonths(6)}
+                                className={`px-3 py-1 text-xs font-bold rounded ${chartMonths === 6 ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                            >
+                                6 Months
+                            </button>
+                            <button
+                                onClick={() => setChartMonths(12)}
+                                className={`px-3 py-1 text-xs font-bold rounded ${chartMonths === 12 ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                            >
+                                12 Months
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {data.goals && data.goals.map(goal => {
-                        const progress = Math.min(100, (goal.current_amount / goal.target_amount) * 100);
-                        return (
-                            <div key={goal.id} className="card p-5 bg-slate-800 rounded-xl shadow-lg border border-slate-700 relative overflow-hidden group">
-                                <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                        <div className="text-sm font-bold text-slate-100 group-hover:text-blue-400 transition-colors">{goal.name}</div>
-                                        <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mt-0.5">{goal.bucket_name}</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-xs font-bold text-slate-100">{Math.round(progress)}%</div>
-                                    </div>
-                                </div>
-                                <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden mb-3">
-                                    <div 
-                                        className="h-full bg-blue-500 transition-all duration-1000 ease-out" 
-                                        style={{ width: `${progress}%` }}
-                                    ></div>
-                                </div>
-                                <div className="flex justify-between items-center text-[11px]">
-                                    <span className="text-slate-400">{formatCurrency(goal.current_amount)}</span>
-                                    <span className="text-slate-500">Target: {formatCurrency(goal.target_amount)}</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {(!data.goals || data.goals.length === 0) && (
-                        <div className="col-span-full py-8 bg-slate-800/30 rounded-xl border border-dashed border-slate-700 text-center text-slate-500 italic text-sm">
-                            No active goals tracked yet.
+
+                <div className="h-[350px]">
+                    {combinedChartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={combinedChartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                                <defs>
+                                    <linearGradient id="netWorthGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.25} />
+                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                                <XAxis 
+                                    dataKey="month" 
+                                    stroke="#64748b" 
+                                    fontSize={11}
+                                    tickFormatter={(val: string) => {
+                                        const [y, m] = val.split('-');
+                                        return new Date(parseInt(y), parseInt(m) - 1).toLocaleString('default', { month: 'short' });
+                                    }}
+                                />
+                                <YAxis 
+                                    stroke="#64748b" 
+                                    fontSize={11} 
+                                    tickFormatter={(val: number) => `₹${(val / 1000).toFixed(0)}k`} 
+                                />
+                                <Tooltip 
+                                    cursor={{ stroke: '#334155', strokeDasharray: '3 3' }}
+                                    content={({ active, payload, label }) => {
+                                        if (!active || !payload || !payload.length) return null;
+                                        const [y, m] = (label || '').split('-');
+                                        const monthName = new Date(parseInt(y), parseInt(m) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                                        return (
+                                            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-4 rounded-xl shadow-2xl min-w-[200px]">
+                                                <div className="text-slate-400 font-bold mb-3 text-xs border-b border-slate-800 pb-1.5">{monthName}</div>
+                                                {payload.map((entry: any, index: number) => (
+                                                    <div key={index} className="flex justify-between items-center text-xs mb-1.5 gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+                                                            <span className="text-slate-300 font-medium">{entry.name}:</span>
+                                                        </div>
+                                                        <span className="font-mono font-bold" style={{ color: entry.color }}>
+                                                            {formatCurrency(Number(entry.value))}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    }}
+                                />
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="net_worth" 
+                                    name="Net Worth" 
+                                    stroke="#06b6d4" 
+                                    strokeWidth={3} 
+                                    fill="url(#netWorthGrad)" 
+                                />
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="income" 
+                                    name="Income" 
+                                    stroke="#34d399" 
+                                    strokeWidth={2.5} 
+                                    dot={{ r: 4, fill: '#34d399' }}
+                                    activeDot={{ r: 6 }} 
+                                />
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="expense" 
+                                    name="Expenses" 
+                                    stroke="#f87171" 
+                                    strokeWidth={2.5} 
+                                    dot={{ r: 4, fill: '#f87171' }}
+                                    activeDot={{ r: 6 }} 
+                                />
+                                <Line 
+                                    type="monotone" 
+                                    dataKey="investment" 
+                                    name="Investments" 
+                                    stroke="#c084fc" 
+                                    strokeWidth={2} 
+                                    strokeDasharray="4 4"
+                                    dot={{ r: 3, fill: '#c084fc' }}
+                                />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-500 italic text-sm">
+                            No monthly cash flow data recorded yet.
                         </div>
                     )}
                 </div>
@@ -210,7 +384,6 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
-
 
             {/* Project Finance Summary */}
             <div className="mb-6">
@@ -297,20 +470,6 @@ export default function Dashboard() {
                     </button>
                 </div>
             </div>
-
-            {/* Getting Started Guide (only if no data) */}
-            {data.total_balance === 0 && data.current_month_income === 0 && data.current_month_expense === 0 && (
-                <div className="card p-6 mt-6 border-2 border-blue-600 bg-slate-800/50 rounded-xl shadow-lg">
-                    <h2 className="text-xl font-bold mb-4 text-slate-100">Getting Started</h2>
-                    <div className="space-y-3 text-slate-300">
-                        <p>✅ All screens are functional and ready to use</p>
-                        <p>✅ Database is integrated and working</p>
-                        <p>💡 Start by adding your accounts in the Accounts screen</p>
-                        <p>💡 Then create categories for income and expenses</p>
-                        <p>💡 Finally, record your first transaction!</p>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

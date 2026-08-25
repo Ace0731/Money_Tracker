@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import type { Client } from '../types';
+import type { Client, Project } from '../types';
+import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
 
 export default function Clients() {
     const { execute, loading } = useDatabase();
     const [clients, setClients] = useState<Client[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState<Client>({
         name: '',
@@ -20,15 +22,19 @@ export default function Clients() {
     });
 
     useEffect(() => {
-        loadClients();
+        loadData();
     }, []);
 
-    const loadClients = async () => {
+    const loadData = async () => {
         try {
-            const data = await execute<Client[]>('get_clients');
-            setClients(data);
+            const [cData, pData] = await Promise.all([
+                execute<Client[]>('get_clients'),
+                execute<Project[]>('get_projects')
+            ]);
+            setClients(cData);
+            setProjects(pData);
         } catch (error) {
-            console.error('Failed to load clients:', error);
+            console.error('Failed to load clients data:', error);
         }
     };
 
@@ -40,7 +46,7 @@ export default function Clients() {
             } else {
                 await execute('create_client', { client: formData });
             }
-            await loadClients();
+            await loadData();
             setShowForm(false);
             setFormData({
                 name: '', notes: '', status: 'active',
@@ -72,12 +78,21 @@ export default function Clients() {
         setShowForm(true);
     };
 
+    // Overall client analytics
+    const totalProjValue = projects.reduce((sum, p) => sum + (p.expected_amount || 0), 0);
+    const totalEffortValue = projects.reduce((sum, p) => sum + ((p.logged_hours || 0) * (p.hourly_rate || 0)), 0);
+    const totalLoggedHours = projects.reduce((sum, p) => sum + (p.logged_hours || 0), 0);
+    const totalReceivedAmount = projects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+    const overallActualRate = totalLoggedHours > 0 ? totalReceivedAmount / totalLoggedHours : 0;
+    const overallTargetRate = totalLoggedHours > 0 ? totalEffortValue / totalLoggedHours : 0;
+    const overallEfficiency = overallTargetRate > 0 ? (overallActualRate / overallTargetRate) * 100 : (totalEffortValue > 0 ? (totalReceivedAmount / totalEffortValue) * 100 : 0);
+
     return (
-        <div className="p-6">
+        <div className="p-6 pb-20">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h1 className={darkTheme.title}>Clients</h1>
-                    <p className="text-sm text-slate-400">Manage client profiles and billing information</p>
+                    <p className="text-sm text-slate-400">Manage client profiles, effort value, and billing performance</p>
                 </div>
                 <button
                     onClick={() => {
@@ -94,43 +109,108 @@ export default function Clients() {
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {clients.map((client) => (
-                    <div
-                        key={client.id}
-                        className={`${darkTheme.card} p-6 cursor-pointer hover:border-blue-500/50 transition-all group`}
-                        onClick={() => handleEdit(client)}
-                    >
-                        <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-lg font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
-                                {client.name}
-                            </h3>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${client.status === 'inactive' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' :
-                                client.status === 'prospect' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
-                                    'bg-green-500/10 text-green-400 border border-green-500/20'
-                                }`}>
-                                {client.status}
-                            </span>
-                        </div>
+            {/* Top Client Analytics Banner */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Projects Value</div>
+                    <div className="text-2xl font-bold text-blue-400">{formatCurrency(totalProjValue)}</div>
+                    <div className="text-[11px] text-slate-500 mt-1">Across all clients</div>
+                </div>
 
-                        {client.business_name && (
-                            <p className="text-sm text-blue-300 mb-1 font-medium">{client.business_name}</p>
-                        )}
+                <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Effort Value</div>
+                    <div className="text-2xl font-bold text-purple-400">{formatCurrency(totalEffortValue)}</div>
+                    <div className="text-[11px] text-slate-500 mt-1">{totalLoggedHours.toFixed(1)}h client hours</div>
+                </div>
 
-                        <div className="space-y-1 mt-4 border-t border-white/5 pt-4">
-                            {client.email && (
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                    <span>📧</span> {client.email}
-                                </div>
-                            )}
-                            {client.contact_number && (
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                    <span>📞</span> {client.contact_number}
-                                </div>
-                            )}
-                        </div>
+                <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Client Actual Hourly Rate</div>
+                    <div className="text-2xl font-bold text-emerald-400">{formatCurrency(overallActualRate)}<small className="text-xs text-slate-500">/hr</small></div>
+                    <div className="text-[11px] text-slate-500 mt-1">Realized per logged hour</div>
+                </div>
+
+                <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Overall Client Efficiency</div>
+                    <div className={`text-2xl font-bold ${overallEfficiency >= 100 ? 'text-green-400' : overallEfficiency >= 75 ? 'text-blue-400' : 'text-orange-400'}`}>
+                        {overallEfficiency.toFixed(1)}%
                     </div>
-                ))}
+                    <div className="text-[11px] text-slate-500 mt-1">Realized vs target rate</div>
+                </div>
+            </div>
+
+            {/* Client Cards List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {clients.map((client) => {
+                    const clientProjects = projects.filter(p => p.client_id === client.id);
+                    const cumProjVal = clientProjects.reduce((sum, p) => sum + (p.expected_amount || 0), 0);
+                    const cumEffortVal = clientProjects.reduce((sum, p) => sum + ((p.logged_hours || 0) * (p.hourly_rate || 0)), 0);
+                    const cumLogged = clientProjects.reduce((sum, p) => sum + (p.logged_hours || 0), 0);
+                    const cumRecv = clientProjects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                    const actualRate = cumLogged > 0 ? cumRecv / cumLogged : 0;
+                    const targetRate = cumLogged > 0 ? cumEffortVal / cumLogged : 0;
+                    const efficiency = targetRate > 0 ? (actualRate / targetRate) * 100 : (cumEffortVal > 0 ? (cumRecv / cumEffortVal) * 100 : 0);
+
+                    return (
+                        <div
+                            key={client.id}
+                            className={`${darkTheme.card} p-6 cursor-pointer hover:border-blue-500/50 transition-all group flex flex-col justify-between`}
+                            onClick={() => handleEdit(client)}
+                        >
+                            <div>
+                                <div className="flex justify-between items-start mb-2">
+                                    <h3 className="text-lg font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
+                                        {client.name}
+                                    </h3>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${client.status === 'inactive' ? 'bg-slate-500/10 text-slate-500 border border-slate-500/20' :
+                                        client.status === 'prospect' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                                            'bg-green-500/10 text-green-400 border border-green-500/20'
+                                        }`}>
+                                        {client.status}
+                                    </span>
+                                </div>
+
+                                {client.business_name && (
+                                    <p className="text-sm text-blue-300 mb-3 font-medium">{client.business_name}</p>
+                                )}
+
+                                {/* Client Effort & Value Breakdown */}
+                                <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/50 my-3 space-y-2 text-xs">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400">Projects Value ({clientProjects.length}):</span>
+                                        <span className="font-bold text-blue-400">{formatCurrency(cumProjVal)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400">Effort Value ({cumLogged.toFixed(1)}h):</span>
+                                        <span className="font-bold text-purple-400">{formatCurrency(cumEffortVal)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+                                        <span className="text-slate-400">Actual Hourly Rate:</span>
+                                        <span className="font-bold text-emerald-400">{formatCurrency(actualRate)}/hr</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400">Efficiency Score:</span>
+                                        <span className={`font-bold px-2 py-0.5 rounded ${efficiency >= 100 ? 'bg-green-500/20 text-green-400' : efficiency > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-800 text-slate-500'}`}>
+                                            {efficiency > 0 ? `${efficiency.toFixed(0)}%` : '---'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1 mt-2 border-t border-white/5 pt-3">
+                                {client.email && (
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <span>📧</span> {client.email}
+                                    </div>
+                                )}
+                                {client.contact_number && (
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <span>📞</span> {client.contact_number}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             {clients.length === 0 && !loading && (
@@ -150,36 +230,40 @@ export default function Clients() {
                             <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white">✕</button>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
+                        <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="md:col-span-2">
-                                    <label className={darkTheme.label}>Display Name (Personal/Main) *</label>
+                                <div>
+                                    <label className={darkTheme.label}>Client Name *</label>
                                     <input
                                         type="text"
                                         required
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         className={darkTheme.input}
-                                        placeholder="e.g., John Doe"
+                                        placeholder="e.g. John Doe"
                                     />
                                 </div>
-                                <div className="md:col-span-2">
-                                    <label className={darkTheme.label}>Business / Legal Name</label>
+                                <div>
+                                    <label className={darkTheme.label}>Business Name</label>
                                     <input
                                         type="text"
                                         value={formData.business_name || ''}
                                         onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                                         className={darkTheme.input}
-                                        placeholder="e.g., Acme Solutions Pvt Ltd"
+                                        placeholder="e.g. Acme Corp"
                                     />
                                 </div>
-                                <div className="md:col-span-2">
-                                    <label className={darkTheme.label}>Business Address</label>
-                                    <textarea
-                                        value={formData.address || ''}
-                                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                        className={darkTheme.input + " min-h-[80px]"}
-                                        placeholder="Street, City, State, PIN"
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className={darkTheme.label}>Email</label>
+                                    <input
+                                        type="email"
+                                        value={formData.email || ''}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                        className={darkTheme.input}
+                                        placeholder="john@example.com"
                                     />
                                 </div>
                                 <div>
@@ -189,27 +273,7 @@ export default function Clients() {
                                         value={formData.contact_number || ''}
                                         onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })}
                                         className={darkTheme.input}
-                                        placeholder="+91 XXXXX XXXXX"
-                                    />
-                                </div>
-                                <div>
-                                    <label className={darkTheme.label}>Email Address</label>
-                                    <input
-                                        type="email"
-                                        value={formData.email || ''}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        className={darkTheme.input}
-                                        placeholder="client@example.com"
-                                    />
-                                </div>
-                                <div>
-                                    <label className={darkTheme.label}>GST Number (Optional)</label>
-                                    <input
-                                        type="text"
-                                        value={formData.gst || ''}
-                                        onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
-                                        className={darkTheme.input}
-                                        placeholder="29AAAAA0000A1Z5"
+                                        placeholder="+1 234 567 890"
                                     />
                                 </div>
                                 <div>
@@ -227,23 +291,43 @@ export default function Clients() {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className={darkTheme.label}>GST / Tax ID</label>
+                                    <input
+                                        type="text"
+                                        value={formData.gst || ''}
+                                        onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
+                                        className={darkTheme.input}
+                                        placeholder="GSTIN or Tax Number"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={darkTheme.label}>Address</label>
+                                    <input
+                                        type="text"
+                                        value={formData.address || ''}
+                                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                        className={darkTheme.input}
+                                        placeholder="Billing address"
+                                    />
+                                </div>
+                            </div>
+
                             <div>
-                                <label className={darkTheme.label}>Internal Notes</label>
+                                <label className={darkTheme.label}>Notes</label>
                                 <textarea
                                     value={formData.notes || ''}
                                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                    className={darkTheme.input + " min-h-[60px]"}
-                                    placeholder="Any internal reminders..."
+                                    className={darkTheme.textarea}
+                                    rows={3}
+                                    placeholder="Client notes or billing details..."
                                 />
                             </div>
 
-                            <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-                                <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>
-                                    Discard
-                                </button>
-                                <button type="submit" className={darkTheme.btnPrimary + " px-8"}>
-                                    {formData.id ? 'Save Changes' : 'Register Client'}
-                                </button>
+                            <div className="flex justify-end gap-2 pt-4">
+                                <button type="button" onClick={() => setShowForm(false)} className={darkTheme.btnCancel}>Cancel</button>
+                                <button type="submit" className={darkTheme.btnPrimary}>Save Client</button>
                             </div>
                         </form>
                     </div>

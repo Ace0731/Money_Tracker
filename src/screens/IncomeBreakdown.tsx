@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getFiscalYearRange } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import type { IncomeBreakdownItem, CategoryHour, Category } from '../types';
 import Swal from 'sweetalert2';
@@ -9,10 +9,10 @@ export default function IncomeBreakdown() {
     const { execute } = useDatabase();
     const [viewMode, setViewMode] = useState<'month' | 'year' | 'range'>('month');
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
-    const [year, setYear] = useState(new Date().getFullYear());
+    const [year, setYear] = useState(getFiscalYearRange().fyStartYear);
     const [range, setRange] = useState({
-        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-        end: new Date().toISOString().split('T')[0]
+        start: getFiscalYearRange().start_date,
+        end: getFiscalYearRange().end_date
     });
 
     const [breakdown, setBreakdown] = useState<IncomeBreakdownItem[]>([]);
@@ -35,9 +35,10 @@ export default function IncomeBreakdown() {
                 end: `${month}-${String(lastDay).padStart(2, '0')}`
             };
         } else if (viewMode === 'year') {
+            // Fiscal Year: April 1 to March 31
             return {
-                start: `${year}-01-01`,
-                end: `${year}-12-31`
+                start: `${year}-04-01`,
+                end: `${year + 1}-03-31`
             };
         } else {
             return {
@@ -133,7 +134,27 @@ export default function IncomeBreakdown() {
         }
     };
 
+    const getMonthCount = () => {
+        if (viewMode === 'month') return 1;
+        if (viewMode === 'year') {
+            const currentYear = new Date().getFullYear();
+            if (year === currentYear) {
+                return Math.max(1, new Date().getMonth() + 1);
+            }
+            return 12;
+        }
+        if (viewMode === 'range') {
+            const start = new Date(range.start);
+            const end = new Date(range.end);
+            const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+            return Math.max(1, diffMonths);
+        }
+        return 1;
+    };
+
+    const monthCount = getMonthCount();
     const totalIncome = breakdown.reduce((sum, item) => sum + item.income, 0);
+    const monthlyAvgIncome = totalIncome / monthCount;
     const totalHours = breakdown.reduce((sum, item) => sum + item.hours, 0);
     const avgRate = totalHours > 0 ? totalIncome / totalHours : 0;
 
@@ -142,7 +163,7 @@ export default function IncomeBreakdown() {
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
                 <div>
                     <h1 className={darkTheme.title}>Income Breakdown</h1>
-                    <p className="text-slate-400 text-sm mt-1">Hourly rate tracking for Income categories</p>
+                    <p className="text-slate-400 text-sm mt-1">Hourly rate and monthly average tracking for Income categories</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 bg-slate-800/50 p-1.5 rounded-xl border border-slate-700">
@@ -207,11 +228,16 @@ export default function IncomeBreakdown() {
             </div>
 
             {/* Top Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="card bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl overflow-hidden relative group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl group-hover:scale-110 transition-transform">💰</div>
                     <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Total Income</div>
                     <div className="text-3xl font-bold text-slate-100">{formatCurrency(totalIncome)}</div>
+                </div>
+                <div className="card bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl overflow-hidden relative group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl group-hover:scale-110 transition-transform">📅</div>
+                    <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Monthly Avg Income</div>
+                    <div className="text-3xl font-bold text-emerald-400">{formatCurrency(monthlyAvgIncome)}<small className="text-xs text-slate-500">/mo</small></div>
                 </div>
                 <div className="card bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl overflow-hidden relative group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 text-4xl group-hover:scale-110 transition-transform">⏱️</div>
@@ -236,8 +262,12 @@ export default function IncomeBreakdown() {
                                         {item.category_name}
                                         {item.is_project_based && <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-tighter">Project Based</span>}
                                     </h3>
-                                    <div className="text-slate-400 text-sm mt-1">
-                                        Income: {formatCurrency(item.income)} • Hours: {item.hours.toFixed(1)}h
+                                    <div className="text-slate-400 text-sm mt-1 flex items-center gap-2 flex-wrap">
+                                        <span>Income: {formatCurrency(item.income)}</span>
+                                        <span>•</span>
+                                        <span className="text-emerald-400 font-semibold">Monthly Avg: {formatCurrency(item.income / monthCount)}/mo</span>
+                                        <span>•</span>
+                                        <span>Hours: {item.hours.toFixed(1)}h</span>
                                     </div>
                                 </div>
                                 <div className="text-right">

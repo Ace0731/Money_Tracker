@@ -17,6 +17,7 @@ export default function Accounts() {
         parent_id: undefined,
         bucket_role: 'none',
         notes: '',
+        current_balance: 0
     });
 
     useEffect(() => {
@@ -64,14 +65,16 @@ export default function Accounts() {
         try {
             if (formData.id) {
                 await execute('update_account', { account: formData });
+                Swal.fire({ title: 'Updated!', icon: 'success', background: '#0f172a', color: '#f1f5f9', timer: 1500, showConfirmButton: false });
             } else {
                 await execute('create_account', { account: formData });
+                Swal.fire({ title: 'Created!', icon: 'success', background: '#0f172a', color: '#f1f5f9', timer: 1500, showConfirmButton: false });
             }
             await loadAccounts();
             setShowForm(false);
-            setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', notes: '' });
-        } catch (error) {
-            console.error('Failed to save account:', error);
+            setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', notes: '', current_balance: 0 });
+        } catch (error: any) {
+            Swal.fire({ title: 'Error', text: error.message || 'Failed to save account', icon: 'error', background: '#0f172a', color: '#f1f5f9' });
         }
     };
 
@@ -260,7 +263,7 @@ export default function Accounts() {
                 </div>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', notes: '' });
+                        setFormData({ name: '', account_type: 'bank', opening_balance: 0, parent_id: undefined, bucket_role: 'none', is_investment_active: false, notes: '' });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}

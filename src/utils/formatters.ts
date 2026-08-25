@@ -73,3 +73,18 @@ export const formatRelativeTime = (dateString: string | null | undefined): strin
     
     return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
+
+/**
+ * Get Fiscal Year date range (April 1 to March 31)
+ */
+export const getFiscalYearRange = (refDate: Date = new Date()) => {
+    const year = refDate.getFullYear();
+    const month = refDate.getMonth(); // 0-indexed (3 = April)
+    const fyStartYear = month >= 3 ? year : year - 1;
+    return {
+        start_date: `${fyStartYear}-04-01`,
+        end_date: `${fyStartYear + 1}-03-31`,
+        fyStartYear,
+        label: `FY ${fyStartYear}-${(fyStartYear + 1).toString().slice(2)}`,
+    };
+};

@@ -12,6 +12,7 @@ pub struct Account {
     pub current_balance: Option<f64>,
     pub parent_id: Option<i64>,
     pub bucket_role: String,
+    #[serde(default)]
     pub is_investment_active: bool,
     pub notes: Option<String>,
 }
