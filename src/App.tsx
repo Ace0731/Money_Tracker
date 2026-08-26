@@ -8,6 +8,7 @@ import Categories from './screens/Categories';
 import Projects from './screens/Projects';
 import Investments from './screens/Investments';
 import Reports from './screens/Reports';
+import Taxes from './screens/Taxes';
 import IncomeBreakdown from './screens/IncomeBreakdown';
 import Settings from './screens/Settings';
 
@@ -36,6 +37,7 @@ function App() {
                     <Route path="/projects" element={<Projects />} />
                     <Route path="/investments" element={<Investments />} />
                     <Route path="/reports" element={<Reports />} />
+                    <Route path="/taxes" element={<Taxes />} />
 
                     <Route path="/income-breakdown" element={<IncomeBreakdown />} />
                     <Route path="/settings" element={<Settings />} />

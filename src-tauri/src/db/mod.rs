@@ -175,6 +175,9 @@ pub fn initialize_database() -> Result<DbConnection> {
     // 13. Add is_investment flag to categories
     let _ = conn.execute("ALTER TABLE categories ADD COLUMN is_investment INTEGER DEFAULT 0", []);
     
+    // 13b. Add include_in_tax flag to categories
+    let _ = conn.execute("ALTER TABLE categories ADD COLUMN include_in_tax INTEGER DEFAULT 0", []);
+    
     // 14. Add status to projects (replaces 'completed' boolean)
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active'", []);
     // Migrate completed boolean to status

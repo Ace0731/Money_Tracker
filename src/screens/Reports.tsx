@@ -503,25 +503,10 @@ export default function Reports() {
                                         );
                                     }}
                                 />
-                                <Bar dataKey="expense" stackId="a" fill="#ef4444" name="Expenses" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="investment" stackId="a" fill="#06b6d4" name="Invested" radius={[0, 0, 0, 0]} />
-                                <Bar
-                                    dataKey="savings_display"
-                                    stackId="a"
-                                    fill="#3b82f6"
-                                    name="Savings"
-                                    radius={[6, 6, 0, 0]}
-                                    label={(props: any) => {
-                                        const { x, y, width, index } = props;
-                                        const income = monthlySummary[index]?.income ?? 0;
-                                        if (!income) return <g />;
-                                        return (
-                                            <text x={x + width / 2} y={y - 8} textAnchor="middle" fill="#4ade80" fontSize={11} fontWeight={700}>
-                                                {`₹${(income / 1000).toFixed(1)}k`}
-                                            </text>
-                                        );
-                                    }}
-                                />
+                                <Bar dataKey="income" fill="#4ade80" radius={[4, 4, 0, 0]} name="Income" />
+                                <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expenses" />
+                                <Bar dataKey="investment" fill="#06b6d4" radius={[4, 4, 0, 0]} name="Invested" />
+                                <Bar dataKey="savings_display" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Savings" />
                             </BarChart>
                         </ResponsiveContainer>
                         {monthlySummary.some(m => m.net < 0) && (
@@ -530,6 +515,108 @@ export default function Reports() {
                                 <span>Months with a deficit show no savings segment — you spent more than you earned.</span>
                             </div>
                         )}
+                    </div>
+
+                    {/* 50 / 30 / 20 Financial Health Rule Breakdown & Client Matrix */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className={darkTheme.card + " p-6"}>
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 className={darkTheme.subtitle}>50 / 30 / 20 Financial Rule Compliance</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Healthy Budget Allocation: Needs (50%) • Wants (30%) • Savings/Investments (20%)</p>
+                                </div>
+                                <span className="text-xl">🎯</span>
+                            </div>
+
+                            {(() => {
+                                const totalInc = overallStats?.total_income || 0;
+                                const actualSavings = (overallStats?.total_invested || 0) + Math.max(overallStats?.net_balance || 0, 0);
+                                const actualExp = overallStats?.total_expense || 0;
+                                const actualNeeds = actualExp * 0.65;
+                                const actualWants = actualExp * 0.35;
+
+                                const savingsPc = totalInc > 0 ? (actualSavings / totalInc) * 100 : 0;
+                                const needsPc = totalInc > 0 ? (actualNeeds / totalInc) * 100 : 0;
+                                const wantsPc = totalInc > 0 ? (actualWants / totalInc) * 100 : 0;
+
+                                return (
+                                    <div className="space-y-4 pt-2">
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-slate-300 font-medium">Essential Needs (Rent, Utilities, Food)</span>
+                                                <span className="font-bold text-amber-400">{needsPc.toFixed(1)}% <span className="text-slate-500 font-normal">(Target: 50%)</span></span>
+                                            </div>
+                                            <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full rounded-full transition-all ${needsPc <= 50 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${Math.min(needsPc, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-slate-300 font-medium">Personal Wants & Lifestyle</span>
+                                                <span className="font-bold text-purple-400">{wantsPc.toFixed(1)}% <span className="text-slate-500 font-normal">(Target: 30%)</span></span>
+                                            </div>
+                                            <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full rounded-full transition-all ${wantsPc <= 30 ? 'bg-purple-400' : 'bg-rose-400'}`} style={{ width: `${Math.min(wantsPc, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-slate-300 font-medium">Savings & Investments</span>
+                                                <span className="font-bold text-emerald-400">{savingsPc.toFixed(1)}% <span className="text-slate-500 font-normal">(Target: 20%)</span></span>
+                                            </div>
+                                            <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                                <div className={`h-full rounded-full transition-all ${savingsPc >= 20 ? 'bg-emerald-400' : 'bg-blue-400'}`} style={{ width: `${Math.min(savingsPc, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700/50 text-xs text-slate-300 flex items-center justify-between mt-2">
+                                            <span>Rule Status:</span>
+                                            <span className={`font-bold px-2 py-0.5 rounded ${savingsPc >= 20 ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                {savingsPc >= 20 ? '✅ Excellent Financial Health' : '⚠️ Increase Savings Rate to reach 20%'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        <div className={darkTheme.card + " p-6"}>
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 className={darkTheme.subtitle}>Client Profitability Matrix</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Top Clients by Revenue & Realized Rate</p>
+                                </div>
+                                <span className="text-xl">💼</span>
+                            </div>
+
+                            {clients.length > 0 ? (
+                                <div className="space-y-3">
+                                    {clients.slice(0, 4).map(client => {
+                                        const clientProjs = projects.filter(p => p.client_id === client.id);
+                                        const totalRev = clientProjs.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                                        const totalHours = clientProjs.reduce((sum, p) => sum + (p.logged_hours || 0), 0);
+                                        const rate = totalHours > 0 ? totalRev / totalHours : 0;
+
+                                        return (
+                                            <div key={client.id} className="p-3 bg-slate-900/50 rounded-xl border border-slate-700/40 flex justify-between items-center">
+                                                <div>
+                                                    <div className="text-sm font-bold text-slate-200">{client.name}</div>
+                                                    <div className="text-[11px] text-slate-400">{clientProjs.length} project(s) • {totalHours.toFixed(1)} hrs logged</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-sm font-bold text-emerald-400">{formatCurrency(totalRev)}</div>
+                                                    <div className="text-[11px] text-blue-400 font-medium">{formatCurrency(rate)}/hr</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="text-slate-500 italic text-xs py-8 text-center">No active client data available.</div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Category Pie Chart */}

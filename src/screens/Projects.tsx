@@ -202,13 +202,39 @@ export default function Projects() {
     };
 
     const handleDeleteTimeLog = async (logId: number, projectId: number) => {
-        if (!window.confirm('Are you sure you want to delete this time log?')) return;
+        const result = await Swal.fire({
+            title: 'Delete Time Log?',
+            text: 'Are you sure you want to delete this time log?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#334155',
+            confirmButtonText: 'Yes, Delete',
+            background: '#0f172a',
+            color: '#f1f5f9'
+        });
+        if (!result.isConfirmed) return;
         try {
             await execute('delete_time_log', { id: logId });
             await loadTimeLogs(projectId);
             await loadProjects();
+            Swal.fire({
+                title: 'Deleted!',
+                icon: 'success',
+                timer: 1200,
+                showConfirmButton: false,
+                background: '#0f172a',
+                color: '#f1f5f9'
+            });
         } catch (error) {
             console.error('Failed to delete time log:', error);
+            Swal.fire({
+                title: 'Error',
+                text: 'Failed to delete time log',
+                icon: 'error',
+                background: '#0f172a',
+                color: '#f1f5f9'
+            });
         }
     };
 
@@ -305,6 +331,9 @@ export default function Projects() {
                 const totalEffortValue = projects.reduce((sum, p) => sum + ((p.logged_hours || 0) * (p.hourly_rate || 0)), 0);
                 const totalLoggedHours = projects.reduce((sum, p) => sum + (p.logged_hours || 0), 0);
                 const totalReceivedAmount = projects.reduce((sum, p) => sum + (p.received_amount || 0), 0);
+                const cumNetProfit = totalReceivedAmount - totalEffortValue;
+                const cumMargin = totalReceivedAmount > 0 ? (cumNetProfit / totalReceivedAmount) * 100 : 0;
+
                 const actualHourlyRate = totalLoggedHours > 0 ? totalReceivedAmount / totalLoggedHours : 0;
                 const targetHourlyRate = totalLoggedHours > 0 ? totalEffortValue / totalLoggedHours : 0;
                 const overallEfficiency = targetHourlyRate > 0 ? (actualHourlyRate / targetHourlyRate) * 100 : (totalEffortValue > 0 ? (totalReceivedAmount / totalEffortValue) * 100 : 0);
@@ -312,7 +341,7 @@ export default function Projects() {
                 return (
                 <div className="space-y-8">
                     {/* Cumulative Projects & Effort Stats Banner */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-2">
                         <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Project Value</div>
                             <div className="text-2xl font-bold text-blue-400">{formatCurrency(totalProjValue)}</div>
@@ -323,6 +352,14 @@ export default function Projects() {
                             <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Effort Value</div>
                             <div className="text-2xl font-bold text-purple-400">{formatCurrency(totalEffortValue)}</div>
                             <div className="text-[11px] text-slate-500 mt-1">{totalLoggedHours.toFixed(1)}h logged total</div>
+                        </div>
+
+                        <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Cumulative Net Profit</div>
+                            <div className={`text-2xl font-bold ${cumNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {formatCurrency(cumNetProfit)}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">Received − Effort Cost ({cumMargin.toFixed(0)}% Margin)</div>
                         </div>
 
                         <div className="card bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md">
@@ -344,66 +381,69 @@ export default function Projects() {
                     <div>
                         <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-l-2 border-blue-500 pl-3">Active Projects</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {projects.filter(p => p.status === 'active' || p.status === 'prospect').map((project) => (
-                            <div
-                                key={project.id}
-                                className={`${darkTheme.card} p-6 cursor-pointer relative group`}
-                                onClick={() => handleEdit(project)}
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <h3 className="text-xl font-bold text-slate-100">{project.name}</h3>
-                                    {project.expected_amount && (
-                                        <span className="text-sm font-bold text-green-400">
-                                            {formatCurrency(project.expected_amount)}
-                                        </span>
-                                    )}
-                                    {project.status === 'prospect' && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-500/20 text-purple-400">
-                                            🎯 Prospect
-                                        </span>
-                                    )}
-                                </div>
+                            {projects.filter(p => p.status === 'active' || p.status === 'prospect').map((project) => {
+                                const effortCost = (project.logged_hours || 0) * (project.hourly_rate || 0);
+                                const netProfit = (project.received_amount || 0) - effortCost;
+                                const marginPc = (project.received_amount || 0) > 0 ? (netProfit / (project.received_amount || 0)) * 100 : 0;
 
-                                <div className="flex justify-between items-center mb-4">
-                                    <p className="text-sm text-blue-400">{getClientName(project.client_id)}</p>
-                                    {project.category_id && (
-                                        <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 font-bold uppercase tracking-widest">
-                                            {getCategoryName(project.category_id)}
-                                        </span>
-                                    )}
-                                </div>
+                                return (
+                                <div
+                                    key={project.id}
+                                    className={`${darkTheme.card} p-6 cursor-pointer relative group`}
+                                    onClick={() => handleEdit(project)}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h3 className="text-xl font-bold text-slate-100">{project.name}</h3>
+                                        {project.expected_amount && (
+                                            <span className="text-sm font-bold text-green-400">
+                                                {formatCurrency(project.expected_amount)}
+                                            </span>
+                                        )}
+                                        {project.status === 'prospect' && (
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-500/20 text-purple-400">
+                                                🎯 Prospect
+                                            </span>
+                                        )}
+                                    </div>
 
-                                <div className="grid grid-cols-2 gap-4 mb-4 p-3 bg-slate-700/50 rounded-lg">
-                                    <div>
-                                        <div className="text-[10px] text-slate-400 uppercase">Earned (Time)</div>
-                                        <div className="text-sm font-bold text-slate-100">
-                                            {formatCurrency((project.logged_hours || 0) * (project.hourly_rate || 0))}
+                                    <div className="flex justify-between items-center mb-4">
+                                        <p className="text-sm text-blue-400">{getClientName(project.client_id)}</p>
+                                        {project.category_id && (
+                                            <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 font-bold uppercase tracking-widest">
+                                                {getCategoryName(project.category_id)}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 mb-4 p-3 bg-slate-700/50 rounded-lg">
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 uppercase">Effort Cost</div>
+                                            <div className="text-sm font-bold text-purple-300">
+                                                {formatCurrency(effortCost)}
+                                            </div>
+                                        </div>
+                                        <div className="hover:bg-green-500/10 transition-colors rounded p-1" onClick={(e) => { e.stopPropagation(); project.id && openPayments(project.id); }}>
+                                            <div className="text-[10px] text-slate-400 uppercase flex justify-between items-center">
+                                                Received
+                                                <span className="text-[8px] text-green-500 font-bold">VIEW 👁️</span>
+                                            </div>
+                                            <div className="text-sm font-bold text-green-400">
+                                                {formatCurrency(project.received_amount || 0)}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 uppercase">Net Profit</div>
+                                            <div className={`text-sm font-bold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {formatCurrency(netProfit)} <span className="text-[10px] font-normal">({marginPc.toFixed(0)}%)</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
+                                            <div className="text-sm font-bold text-blue-400">
+                                                {formatCurrency((project.expected_amount || 0) - (project.received_amount || 0))}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="hover:bg-green-500/10 transition-colors rounded p-1" onClick={(e) => { e.stopPropagation(); project.id && openPayments(project.id); }}>
-                                        <div className="text-[10px] text-slate-400 uppercase flex justify-between items-center">
-                                            Received
-                                            <span className="text-[8px] text-green-500 font-bold">VIEW 👁️</span>
-                                        </div>
-                                        <div className="text-sm font-bold text-green-400">
-                                            {formatCurrency(project.received_amount || 0)}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-slate-400 uppercase">SRS Status</div>
-                                        <div className={`text-sm font-bold ${project.srs_status === 'Approved' ? 'text-green-400' :
-                                            project.srs_status === 'Sent' ? 'text-blue-400' : 'text-slate-400'
-                                            }`}>
-                                            {project.srs_status || 'Draft'}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
-                                        <div className="text-sm font-bold text-blue-400">
-                                            {formatCurrency((project.expected_amount || 0) - (project.received_amount || 0))}
-                                        </div>
-                                    </div>
-                                </div>
 
                                 <div className="flex flex-wrap gap-2 items-center mb-4">
                                     <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-bold">
@@ -465,7 +505,8 @@ export default function Projects() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                        );
+                    })}
                     </div>
                 </div>
 
@@ -516,8 +557,9 @@ export default function Projects() {
                                         <tr>
                                             <th className="px-4 py-3 border-b border-slate-700">Project</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Client</th>
-                                            <th className="px-4 py-3 border-b border-slate-700">Earned</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Effort Cost</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Received</th>
+                                            <th className="px-4 py-3 border-b border-slate-700">Net Profit</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Actual Rate</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Allocated</th>
                                             <th className="px-4 py-3 border-b border-slate-700">Eff.</th>
@@ -526,11 +568,16 @@ export default function Projects() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {projects.filter(p => p.status === 'completed' || p.status === 'cancelled').map((project) => (
+                                        {projects.filter(p => p.status === 'completed' || p.status === 'cancelled').map((project) => {
+                                            const effortCost = (project.logged_hours || 0) * (project.hourly_rate || 0);
+                                            const netProfit = (project.received_amount || 0) - effortCost;
+                                            const marginPc = (project.received_amount || 0) > 0 ? (netProfit / (project.received_amount || 0)) * 100 : 0;
+
+                                            return (
                                             <tr key={project.id} className="hover:bg-slate-700/30 transition-colors">
                                                 <td className="px-4 py-3 text-slate-200 font-bold">{project.name}</td>
                                                 <td className="px-4 py-3 text-blue-400 text-sm">{getClientName(project.client_id)}</td>
-                                                <td className="px-4 py-3 text-slate-200 text-sm">{formatCurrency((project.logged_hours || 0) * (project.hourly_rate || 0))}</td>
+                                                <td className="px-4 py-3 text-purple-300 text-sm">{formatCurrency(effortCost)}</td>
                                                 <td className="px-4 py-3 text-green-400 font-bold group/received">
                                                     <div className="flex items-center gap-2">
                                                         {formatCurrency(project.received_amount || 0)}
@@ -541,6 +588,10 @@ export default function Projects() {
                                                             👁️
                                                         </button>
                                                     </div>
+                                                </td>
+                                                <td className={`px-4 py-3 font-bold text-sm ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {formatCurrency(netProfit)}
+                                                    <span className="text-[10px] block font-normal text-slate-400">({marginPc.toFixed(0)}% margin)</span>
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-200 text-sm">
                                                     {project.logged_hours && project.logged_hours > 0
@@ -580,7 +631,8 @@ export default function Projects() {
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        );
+                                        })}
                                     </tbody>
                                 </table>
                                 {/* Archived Projects */}

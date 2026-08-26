@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Swal from 'sweetalert2';
 import { useDatabase } from '../hooks/useDatabase';
 import type { Category } from '../types';
 import { darkTheme } from '../utils/theme';
@@ -13,6 +14,7 @@ export default function Categories() {
         notes: '',
         is_investment: false,
         include_in_income_breakdown: false,
+        include_in_tax: false,
     });
 
     useEffect(() => {
@@ -33,14 +35,17 @@ export default function Categories() {
         try {
             if (formData.id) {
                 await execute('update_category', { category: formData });
+                Swal.fire({ title: 'Category Updated!', icon: 'success', timer: 1500, showConfirmButton: false, background: '#0f172a', color: '#f1f5f9' });
             } else {
                 await execute('create_category', { category: formData });
+                Swal.fire({ title: 'Category Created!', icon: 'success', timer: 1500, showConfirmButton: false, background: '#0f172a', color: '#f1f5f9' });
             }
             await loadCategories();
             setShowForm(false);
-            setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_income_breakdown: false });
+            setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_income_breakdown: false, include_in_tax: false });
         } catch (error) {
             console.error('Failed to save category:', error);
+            Swal.fire({ title: 'Error', text: 'Failed to save category', icon: 'error', background: '#0f172a', color: '#f1f5f9' });
         }
     };
 
@@ -61,7 +66,7 @@ export default function Categories() {
                 <h1 className={darkTheme.title}>Categories</h1>
                 <button
                     onClick={() => {
-                        setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_income_breakdown: false });
+                        setFormData({ name: '', kind: 'expense', notes: '', is_investment: false, include_in_income_breakdown: false, include_in_tax: false });
                         setShowForm(true);
                     }}
                     className={darkTheme.btnPrimary}
@@ -85,7 +90,11 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-green-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-green-400/70 mt-1">{category.notes}</p>}
-                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded mr-2">📈 Investment</span>}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {category.is_investment && <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
+                                    {category.include_in_tax && <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">🏷️ Taxable</span>}
+                                    {category.include_in_income_breakdown && <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">⏱️ Breakdown</span>}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -103,8 +112,11 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-red-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-red-400/70 mt-1">{category.notes}</p>}
-                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded mr-2">📈 Investment</span>}
-                                {category.include_in_budget !== false && <span className="inline-block mt-2 text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">✓ Budget-Linked</span>}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {category.is_investment && <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
+                                    {category.include_in_tax && <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">🏷️ Taxable</span>}
+                                    {category.include_in_budget !== false && <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">✓ Budgeted</span>}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -122,8 +134,10 @@ export default function Categories() {
                             >
                                 <h3 className="font-bold text-blue-300">{category.name}</h3>
                                 {category.notes && <p className="text-sm text-blue-400/70 mt-1">{category.notes}</p>}
-                                {category.is_investment && <span className="inline-block mt-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded mr-2">📈 Investment</span>}
-                                {category.include_in_budget !== false && <span className="inline-block mt-2 text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">✓ Budget-Linked</span>}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {category.is_investment && <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">📈 Investment</span>}
+                                    {category.include_in_tax && <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">🏷️ Taxable</span>}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -175,32 +189,45 @@ export default function Categories() {
                                 />
                             </div>
 
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="is_investment"
-                                    checked={formData.is_investment || false}
-                                    onChange={(e) => setFormData({ ...formData, is_investment: e.target.checked })}
-                                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500"
-                                />
-                                <label htmlFor="is_investment" className="text-sm text-slate-300">
-                                    📈 Mark as Investment
-                                </label>
-                            </div>
+                            <div className="space-y-3 pt-2 border-t border-slate-700/60">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="include_in_tax"
+                                        checked={formData.include_in_tax || false}
+                                        onChange={(e) => setFormData({ ...formData, include_in_tax: e.target.checked })}
+                                        className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                                    />
+                                    <label htmlFor="include_in_tax" className="text-sm text-slate-300 font-medium">
+                                        🏷️ For Tax Use (Include in Estimated Tax Calculations)
+                                    </label>
+                                </div>
 
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="is_investment"
+                                        checked={formData.is_investment || false}
+                                        onChange={(e) => setFormData({ ...formData, is_investment: e.target.checked })}
+                                        className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500"
+                                    />
+                                    <label htmlFor="is_investment" className="text-sm text-slate-300">
+                                        📈 Mark as Investment
+                                    </label>
+                                </div>
 
-
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="include_in_income_breakdown"
-                                    checked={formData.include_in_income_breakdown || false}
-                                    onChange={(e) => setFormData({ ...formData, include_in_income_breakdown: e.target.checked })}
-                                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500"
-                                />
-                                <label htmlFor="include_in_income_breakdown" className="text-sm text-slate-300">
-                                    ⏱️ Include in Income Breakdown (Hourly/Freelance tracking)
-                                </label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="include_in_income_breakdown"
+                                        checked={formData.include_in_income_breakdown || false}
+                                        onChange={(e) => setFormData({ ...formData, include_in_income_breakdown: e.target.checked })}
+                                        className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500"
+                                    />
+                                    <label htmlFor="include_in_income_breakdown" className="text-sm text-slate-300">
+                                        ⏱️ Include in Income Breakdown (Hourly/Freelance tracking)
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="flex justify-end gap-2 pt-4">

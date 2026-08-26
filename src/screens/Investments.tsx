@@ -32,6 +32,7 @@ export default function Investments() {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [isSyncing, setIsSyncing] = useState(false);
     const [chartViewMode, setChartViewMode] = useState<'category' | 'individual'>('category');
+    const [allocViewMode, setAllocViewMode] = useState<'heatmap' | 'rebalancer' | 'donut'>('heatmap');
 
     // Form states
     const [showForm, setShowForm] = useState(false);
@@ -464,68 +465,322 @@ export default function Investments() {
                         {platformBalances.length === 0 && <div className={`${darkTheme.card} p-4 text-slate-500 italic text-sm`}>No active accounts.</div>}
                     </div>
 
-                    {/* Chart Section - Allocation */}
+                    {/* Upgraded Asset Allocation Section */}
                     <div className={`${darkTheme.card} p-6`}>
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                             <div>
-                                <h3 className="text-lg font-bold text-white tracking-tight">Asset Allocation</h3>
-                                <p className="text-xs text-slate-500">Distribution of current wealth</p>
+                                <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                                    <span>Asset Allocation & Portfolio Matrix</span>
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-mono">
+                                        Total: {formatCurrency(totalPortfolio)}
+                                    </span>
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Real-time wealth distribution, portfolio weightings & smart rebalancing</p>
                             </div>
-                            <select 
-                                value={chartViewMode} 
-                                onChange={(e) => setChartViewMode(e.target.value as any)}
-                                className="bg-slate-800 text-slate-300 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-700 outline-none cursor-pointer hover:bg-slate-700/50 transition-colors"
-                            >
-                                <option value="category">BY CATEGORY</option>
-                                <option value="individual">BY INDIVIDUAL ASSET</option>
-                            </select>
-                        </div>
-                        <div className="h-[450px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie 
-                                        data={allocationData} 
-                                        innerRadius={chartViewMode === 'category' ? 100 : 120} 
-                                        outerRadius={chartViewMode === 'category' ? 140 : 160} 
-                                        paddingAngle={5} 
-                                        dataKey="value"
-                                        stroke="none"
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-700/60">
+                                    {[
+                                        { id: 'heatmap', label: '🧱 Heatmap Matrix' },
+                                        { id: 'rebalancer', label: '⚖️ Smart Rebalancer' },
+                                        { id: 'donut', label: '🍩 Donut Chart' },
+                                    ].map(m => (
+                                        <button
+                                            key={m.id}
+                                            onClick={() => setAllocViewMode(m.id as any)}
+                                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                                allocViewMode === m.id
+                                                    ? 'bg-blue-600 text-white shadow-sm'
+                                                    : 'text-slate-400 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {m.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {allocViewMode === 'donut' && (
+                                    <select 
+                                        value={chartViewMode} 
+                                        onChange={(e) => setChartViewMode(e.target.value as any)}
+                                        className="bg-slate-800 text-slate-300 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-700 outline-none cursor-pointer hover:bg-slate-700/50 transition-colors"
                                     >
-                                        {allocationData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                    </Pie>
-                                    <Tooltip 
-                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
-                                        itemStyle={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '12px' }}
-                                        labelStyle={{ display: 'none' }}
-                                    />
-                                    <Legend iconType="circle" />
-                                </PieChart>
-                            </ResponsiveContainer>
+                                        <option value="category">BY CATEGORY</option>
+                                        <option value="individual">BY INDIVIDUAL ASSET</option>
+                                    </select>
+                                )}
+                            </div>
                         </div>
+
+                        {/* MODE 1: PROPORTIONAL HEATMAP MATRIX */}
+                        {allocViewMode === 'heatmap' && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {Object.entries(activeFilteredSummaries.reduce((acc, s) => {
+                                        const type = s.investment.investment_type;
+                                        if (!acc[type]) {
+                                            acc[type] = {
+                                                type,
+                                                valuation: 0,
+                                                invested: 0,
+                                                count: 0,
+                                                name: type === 'stock' ? 'Equity Stocks' : type === 'mf' ? 'Mutual Funds' : type === 'fd' ? 'Fixed Deposits' : type === 'rd' ? 'Recurring Deposits' : type.toUpperCase(),
+                                                icon: type === 'stock' ? '📈' : type === 'mf' ? '🧺' : type === 'fd' ? '🔒' : type === 'rd' ? '⏱️' : '💼'
+                                            };
+                                        }
+                                        acc[type].valuation += s.current_valuation;
+                                        acc[type].invested += s.total_invested;
+                                        acc[type].count += 1;
+                                        return acc;
+                                    }, {} as Record<string, { type: string; valuation: number; invested: number; count: number; name: string; icon: string }>))
+                                    .map(([key, cat]) => {
+                                        const share = totalPortfolio > 0 ? (cat.valuation / totalPortfolio) * 100 : 0;
+                                        const gain = cat.valuation - cat.invested;
+                                        const gainPc = cat.invested > 0 ? (gain / cat.invested) * 100 : 0;
+
+                                        return (
+                                            <div 
+                                                key={key} 
+                                                className="p-4 rounded-xl bg-slate-900/80 border border-slate-700/70 hover:border-blue-500/40 transition-all flex flex-col justify-between"
+                                            >
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <span className="text-xl">{cat.icon}</span>
+                                                        <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+                                                            {share.toFixed(1)}% share
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-sm font-bold text-slate-100">{cat.name}</div>
+                                                    <div className="text-[11px] text-slate-400 mt-0.5">{cat.count} holdings</div>
+                                                </div>
+
+                                                <div className="mt-4 pt-3 border-t border-slate-800">
+                                                    <div className="text-lg font-bold text-blue-400">{formatCurrency(cat.valuation)}</div>
+                                                    <div className="flex justify-between items-center mt-1">
+                                                        <span className="text-[10px] text-slate-500">Invested: {formatCurrency(cat.invested)}</span>
+                                                        <span className={`text-[10px] font-bold ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                            {gain >= 0 ? '+' : ''}{gainPc.toFixed(1)}%
+                                                        </span>
+                                                    </div>
+                                                    {/* Share Progress Bar */}
+                                                    <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+                                                        <div 
+                                                            className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full" 
+                                                            style={{ width: `${Math.min(100, share)}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Top Asset Allocation Cards */}
+                                <div className="mt-6 pt-6 border-t border-slate-700/50">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Top Individual Holdings Share</h4>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {activeFilteredSummaries.slice(0, 6).map((s) => {
+                                            const share = totalPortfolio > 0 ? (s.current_valuation / totalPortfolio) * 100 : 0;
+                                            return (
+                                                <div key={s.investment.id} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/50 flex justify-between items-center">
+                                                    <div className="min-w-0 flex-1 pr-2">
+                                                        <div className="text-xs font-bold text-slate-200 truncate">{s.investment.name}</div>
+                                                        <div className="text-[10px] text-slate-400">{s.account_name}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-xs font-bold text-cyan-400">{formatCurrency(s.current_valuation)}</div>
+                                                        <div className="text-[10px] font-semibold text-slate-400">{share.toFixed(1)}% of total</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MODE 2: SMART PORTFOLIO REBALANCER */}
+                        {allocViewMode === 'rebalancer' && (
+                            <div className="space-y-6">
+                                <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between">
+                                    <div>
+                                        <div className="text-xs font-bold text-blue-400 uppercase tracking-wider">Portfolio Health & Target Allocation</div>
+                                        <div className="text-sm text-slate-300 mt-0.5">Automated rebalancing assistant based on 60/25/15 target risk matrix</div>
+                                    </div>
+                                    <span className="text-2xl">⚖️</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {[
+                                        { 
+                                            group: 'Equity & Growth', 
+                                            types: ['stock', 'mf'], 
+                                            targetPc: 70,
+                                            icon: '🚀',
+                                            desc: 'Stocks & Growth Mutual Funds' 
+                                        },
+                                        { 
+                                            group: 'Fixed Income & Safety', 
+                                            types: ['fd', 'rd'], 
+                                            targetPc: 30,
+                                            icon: '🔒',
+                                            desc: 'FDs & Recurring Deposits' 
+                                        },
+                                    ].map((target) => {
+                                        const actualVal = activeFilteredSummaries
+                                            .filter(s => target.types.includes(s.investment.investment_type))
+                                            .reduce((acc, s) => acc + s.current_valuation, 0);
+
+                                        const actualPc = totalPortfolio > 0 ? (actualVal / totalPortfolio) * 100 : 0;
+                                        const diffPc = actualPc - target.targetPc;
+                                        const targetVal = (totalPortfolio * target.targetPc) / 100;
+                                        const valDiff = actualVal - targetVal;
+
+                                        const isOver = diffPc > 5;
+                                        const isUnder = diffPc < -5;
+
+                                        return (
+                                            <div key={target.group} className="p-5 bg-slate-900/80 rounded-xl border border-slate-700/60 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <span className="text-xl">{target.icon}</span>
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                                            isOver ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                                            isUnder ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                                            'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                        }`}>
+                                                            {isOver ? `Overweight (+${diffPc.toFixed(1)}%)` :
+                                                             isUnder ? `Underweight (${diffPc.toFixed(1)}%)` :
+                                                             'Optimal Target ✅'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-sm font-bold text-white">{target.group}</div>
+                                                    <div className="text-[11px] text-slate-400 mt-0.5">{target.desc}</div>
+                                                </div>
+
+                                                <div className="mt-4 pt-3 border-t border-slate-800">
+                                                    <div className="flex justify-between items-baseline mb-1">
+                                                        <span className="text-lg font-bold text-emerald-400">{formatCurrency(actualVal)}</span>
+                                                        <span className="text-xs font-bold text-slate-300">{actualPc.toFixed(1)}% <span className="text-slate-500 font-normal">/ target {target.targetPc}%</span></span>
+                                                    </div>
+
+                                                    {/* Progress bar comparison */}
+                                                    <div className="w-full bg-slate-800 h-2 rounded-full mt-2 overflow-hidden relative">
+                                                        <div 
+                                                            className={`h-full rounded-full ${isOver ? 'bg-orange-400' : isUnder ? 'bg-blue-400' : 'bg-emerald-400'}`} 
+                                                            style={{ width: `${Math.min(100, actualPc)}%` }}
+                                                        />
+                                                    </div>
+
+                                                    <div className="text-[10px] text-slate-400 mt-2 font-medium">
+                                                        {valDiff > 0 
+                                                            ? `Rebalance: Consider shifting ${formatCurrency(Math.abs(valDiff))} into under-allocated assets.` 
+                                                            : valDiff < 0 
+                                                            ? `Rebalance: Add ${formatCurrency(Math.abs(valDiff))} to reach recommended weight.` 
+                                                            : 'Perfect alignment with recommended portfolio strategy.'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MODE 3: CLASSIC DONUT CHART */}
+                        {allocViewMode === 'donut' && (
+                            <div className="h-[400px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie 
+                                            data={allocationData} 
+                                            innerRadius={chartViewMode === 'category' ? 100 : 120} 
+                                            outerRadius={chartViewMode === 'category' ? 140 : 160} 
+                                            paddingAngle={5} 
+                                            dataKey="value"
+                                            stroke="none"
+                                        >
+                                            {allocationData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                        </Pie>
+                                        <Tooltip 
+                                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
+                                            itemStyle={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '12px' }}
+                                            labelStyle={{ display: 'none' }}
+                                        />
+                                        <Legend iconType="circle" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
                     </div>
 
                     {/* Performance Row */}
-                    <div className={`${darkTheme.card} p-6`}>
-                        <div>
-                            <h3 className="text-lg font-bold text-white tracking-tight">Asset Performance</h3>
-                            <p className="text-xs text-slate-500 mb-6">Invested vs Current Valuation (Top 10)</p>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className={`${darkTheme.card} p-6`}>
+                            <div>
+                                <h3 className="text-lg font-bold text-white tracking-tight">Asset Performance</h3>
+                                <p className="text-xs text-slate-500 mb-6">Invested vs Current Valuation (Top 10)</p>
+                            </div>
+                            <div className="h-[380px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={performanceData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                                        <XAxis type="number" stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${v/1000}k`} />
+                                        <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={90} tickLine={false} />
+                                        <Tooltip 
+                                            cursor={{ fill: '#33415520' }}
+                                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                            itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                                        />
+                                        <Legend />
+                                        <Bar dataKey="invested" name="Invested" fill="#475569" radius={[0, 4, 4, 0]} />
+                                        <Bar dataKey="current" name="Valuation" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
-                        <div className="h-[400px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={performanceData} layout="vertical" margin={{ left: 40, right: 30 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                                    <XAxis type="number" stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${v/1000}k`} />
-                                    <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={100} />
-                                    <Tooltip 
-                                        cursor={{ fill: '#33415520' }}
-                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
-                                        itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                                    />
-                                    <Legend />
-                                    <Bar dataKey="invested" name="Invested" fill="#475569" radius={[0, 4, 4, 0]} />
-                                    <Bar dataKey="current" name="Valuation" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
+
+                        {/* Top Gainers & Losers Ranking */}
+                        <div className={`${darkTheme.card} p-6`}>
+                            <div>
+                                <h3 className="text-lg font-bold text-white tracking-tight">Top Performers (% Return)</h3>
+                                <p className="text-xs text-slate-500 mb-6">Holdings sorted by Return on Investment (%)</p>
+                            </div>
+                            <div className="h-[380px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        data={summaries
+                                            .map(s => ({
+                                                name: s.investment.name,
+                                                return_pc: parseFloat((s.gain_percentage || 0).toFixed(2)),
+                                                gain_pc: s.gain_percentage || 0
+                                            }))
+                                            .sort((a, b) => b.return_pc - a.return_pc)
+                                            .slice(0, 8)
+                                        }
+                                        layout="vertical"
+                                        margin={{ left: 20, right: 20 }}
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                                        <XAxis type="number" stroke="#64748b" fontSize={10} tickFormatter={(v) => `${v}%`} />
+                                        <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={90} tickLine={false} />
+                                        <Tooltip
+                                            cursor={{ fill: '#33415520' }}
+                                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                            formatter={(val: any) => [`${val}%`, 'Return %']}
+                                        />
+                                        <Bar dataKey="return_pc" name="Return %" radius={[0, 4, 4, 0]}>
+                                            {summaries
+                                                .map(s => s.gain_percentage || 0)
+                                                .slice(0, 8)
+                                                .map((gainPc, index) => (
+                                                    <Cell key={`cell-${index}`} fill={gainPc >= 0 ? '#10b981' : '#f43f5e'} />
+                                                ))
+                                            }
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -108,6 +108,7 @@ export interface Category {
     is_investment: boolean;
     include_in_budget?: boolean;
     include_in_income_breakdown?: boolean;
+    include_in_tax?: boolean;
 }
 
 export interface Client {
