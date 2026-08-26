@@ -2,13 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.5.0] - 2026-08-25
+## [2.5.0] - 2026-08-26
 ### Added
-- **Account Creation Fixes & Alerts**: Resolved Rust IPC deserialization issues (`is_investment_active`) and added SweetAlert popups for user feedback.
-- **Dashboard Net Worth Plot Chart**: Added interactive multi-series chart for Net Worth, Income, Expenses, and Investments with 6-month & 12-month toggles.
-- **Fiscal Year Standard (April - March)**: Integrated Indian Fiscal Year (`April 1 to March 31`) defaults across Dashboard, Income Breakdown, and Reports screens.
-- **Monthly Average Income**: Integrated Monthly Average Income metrics in top stats and per-category views in Income Breakdown and Reports sections.
-- **Projects & Clients Effort Analytics**: Added cumulative project value, cumulative effort value, actual hourly rate, and efficiency metrics across Projects and Clients screens.
+- **Income Tax Estimator Page (`/taxes`)**: Dedicated annual tax estimator comparing New Tax Regime vs Old Tax Regime, complete with interactive dual-bar regime comparison charts, post-tax retention donut chart, effective tax rate metrics, and 80C/80D/NPS deduction calculations.
+- **Category Tax Use Flags**: Added `include_in_tax` database column migration, frontend category configuration checkbox, and `🏷️ Taxable` badges for auto-tracking taxable income.
+- **Projects Net Profit & Profit Margin Metrics**:
+  - Added **Cumulative Net Profit** card to the top stats banner (`Total Received − Total Effort Cost`).
+  - Added **Effort Cost**, **Net Profit**, and **Margin %** to active project cards and completed project tables.
+- **Upgraded Asset Allocation Portfolio Matrix**: Replaced simple donut chart with an interactive **Portfolio Heatmap Matrix** and **Smart Rebalancing Assistant** (evaluating Equity vs Debt target allocations with actionable monetary advice).
+- **SweetAlert2 UI Audit**: Standardized all native browser `alert()` and `confirm()` dialogs across the entire application with custom dark-themed SweetAlert2 (`Swal.fire`) modals.
+- **Fiscal Year Standard (April - March)**: Integrated Indian Fiscal Year (`April 1 to March 31`) standard across Dashboard, Income Breakdown, Taxes, and Reports screens.
+- **Reports & Portfolio Enhancements**: Added 50/30/20 Financial Health Rule Compliance card, Client Profitability Matrix (`₹/hr`), and Top Performers ROI Ranking bar chart.
 
 ## [1.7.0] - 2026-02-24
 ### Added
