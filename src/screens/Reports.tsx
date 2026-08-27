@@ -116,6 +116,11 @@ export default function Reports() {
     const [sourceBreakdownType, setSourceBreakdownType] = useState<'income' | 'expense' | 'transfer'>('expense');
     const [visualSourceBreakdownType, setVisualSourceBreakdownType] = useState<'income' | 'expense' | 'transfer'>('expense');
 
+    // Collapsible states for Detailed Numbers view (default collapsed)
+    const [isProjectIncomeCollapsed, setIsProjectIncomeCollapsed] = useState(true);
+    const [isSourceBreakdownCollapsed, setIsSourceBreakdownCollapsed] = useState(true);
+    const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
+
     // Metadata for Filters
     const [clients, setClients] = useState<Client[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -164,7 +169,7 @@ export default function Reports() {
                 execute<CategorySummary[]>('get_category_summary', { direction: 'income', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'expense', filters: backendFilters }),
                 execute<CategorySummary[]>('get_category_summary', { direction: 'investment', filters: backendFilters }),
-                execute<ProjectIncomeSummary[]>('get_project_income_report', { year: selectedYear }),
+                execute<ProjectIncomeSummary[]>('get_project_income_report', { year: selectedYear, filters: backendFilters }),
                 execute<OverallStats>('get_overall_stats', { filters: backendFilters }),
                 execute<NetWorthPoint[]>('get_net_worth_trend'),
                 execute<any>('get_investment_benchmark_report'),
@@ -954,110 +959,178 @@ export default function Reports() {
                         </div>
                     </div>
 
-                    {/* Project Income Detailed Table */}
+                    {/* Project Income Detailed Table (Collapsible, Collapsed by Default) */}
                     {projectIncomeReport.length > 0 && (
                         <div className={darkTheme.card + " p-6"}>
-                            <h2 className={darkTheme.subtitle + " mb-4"}>Project Income Detailed View</h2>
-                            <div className="bg-slate-900/40 rounded-xl border border-slate-700/50 overflow-hidden">
-                                <table className="w-full text-xs text-left">
-                                    <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
-                                        <tr>
-                                            <th className="px-4 py-3">Month / Project</th>
-                                            <th className="px-4 py-3 text-right">Target</th>
-                                            <th className="px-4 py-3 text-right">Actual</th>
-                                            <th className="px-4 py-3 text-right">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800">
-                                        {projectIncomeReport.map((monthData) => (
-                                            <React.Fragment key={monthData.month}>
-                                                <tr className="bg-slate-800/20 border-l-2 border-green-500">
-                                                    <td className="px-4 py-3 font-bold text-slate-100 italic">
-                                                        {new Date(monthData.month + '-01').toLocaleString('default', { month: 'long' })}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right text-slate-400 font-bold">{formatCurrency(monthData.expected_income)}</td>
-                                                    <td className="px-4 py-3 text-right text-green-400 font-bold">{formatCurrency(monthData.actual_income)}</td>
-                                                    <td className="px-4 py-3 text-right text-slate-500 text-[10px] uppercase">Month Total</td>
-                                                </tr>
-                                                {monthData.projects.map((project) => (
-                                                    <tr key={`${monthData.month}-${project.project_id}`} className="hover:bg-blue-500/5 transition-colors text-[11px]">
-                                                        <td className="px-8 py-2 text-slate-400 flex items-center gap-2">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
-                                                            {project.project_name}
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right text-slate-500">{project.expected > 0 ? formatCurrency(project.expected) : '-'}</td>
-                                                        <td className="px-4 py-2 text-right text-slate-300">{project.actual > 0 ? formatCurrency(project.actual) : '-'}</td>
-                                                        <td className={`px-4 py-2 text-right font-mono ${project.outstanding_balance > 0 ? 'text-orange-400/80' : 'text-slate-600'}`}>
-                                                            {project.outstanding_balance > 0 ? `Pending: ${formatCurrency(project.outstanding_balance)}` : 'Settled'}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </React.Fragment>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div 
+                                className="flex justify-between items-center cursor-pointer select-none"
+                                onClick={() => setIsProjectIncomeCollapsed(!isProjectIncomeCollapsed)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-blue-400 font-bold text-sm">
+                                        {isProjectIncomeCollapsed ? '▶' : '▼'}
+                                    </span>
+                                    <h2 className={darkTheme.subtitle}>Project Income Detailed View</h2>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-slate-400 font-semibold bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                                        {projectIncomeReport.length} Months Total
+                                    </span>
+                                    <button 
+                                        className="text-xs text-slate-300 font-bold bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-3 py-1 rounded-lg border border-blue-500/30 transition-all"
+                                    >
+                                        {isProjectIncomeCollapsed ? 'Expand 📂' : 'Collapse 📁'}
+                                    </button>
+                                </div>
                             </div>
+
+                            {!isProjectIncomeCollapsed && (
+                                <div className="mt-4 bg-slate-900/40 rounded-xl border border-slate-700/50 overflow-hidden transition-all">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                            <tr>
+                                                <th className="px-4 py-3">Month / Project Works</th>
+                                                <th className="px-4 py-3 text-right">Target</th>
+                                                <th className="px-4 py-3 text-right">Actual</th>
+                                                <th className="px-4 py-3 text-right">Status / Net</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-800">
+                                            {projectIncomeReport.map((monthData) => {
+                                                const isMonthCollapsed = collapsedMonths[monthData.month];
+
+                                                return (
+                                                    <React.Fragment key={monthData.month}>
+                                                        <tr 
+                                                            className="bg-slate-800/40 border-l-4 border-green-500 cursor-pointer hover:bg-slate-800/70 transition-colors"
+                                                            onClick={() => setCollapsedMonths(prev => ({ ...prev, [monthData.month]: !prev[monthData.month] }))}
+                                                        >
+                                                            <td className="px-4 py-3 font-bold text-slate-100 italic flex items-center gap-2">
+                                                                <span className="text-xs text-blue-400">{isMonthCollapsed ? '▶' : '▼'}</span>
+                                                                {new Date(monthData.month + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                                                <span className="text-[10px] text-slate-400 font-normal border border-slate-700 px-2 py-0.5 rounded-full not-italic">
+                                                                    {monthData.projects.length} {monthData.projects.length === 1 ? 'project' : 'projects'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right text-slate-400 font-bold">{formatCurrency(monthData.expected_income)}</td>
+                                                            <td className="px-4 py-3 text-right text-green-400 font-bold">{formatCurrency(monthData.actual_income)}</td>
+                                                            <td className="px-4 py-3 text-right text-slate-400 text-[10px] uppercase font-bold">
+                                                                {isMonthCollapsed ? 'Click to Expand' : 'Month Total'}
+                                                            </td>
+                                                        </tr>
+                                                        {!isMonthCollapsed && monthData.projects.map((project) => {
+                                                            const matchedProj = projects.find(p => p.id === project.project_id);
+                                                            const effortCost = matchedProj ? (matchedProj.logged_hours || 0) * (matchedProj.hourly_rate || 0) : 0;
+
+                                                            return (
+                                                                <tr key={`${monthData.month}-${project.project_id}`} className="hover:bg-blue-500/5 transition-colors text-[11px]">
+                                                                    <td className="px-8 py-2.5 text-slate-300">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                                                            <span className="font-bold text-slate-200">{project.project_name}</span>
+                                                                            {matchedProj && matchedProj.logged_hours ? (
+                                                                                <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full font-mono">
+                                                                                    ⏱️ {matchedProj.logged_hours}h Works ({formatCurrency(effortCost)})
+                                                                                </span>
+                                                                            ) : null}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-right text-slate-500">{project.expected > 0 ? formatCurrency(project.expected) : '-'}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-green-400 font-semibold">{project.actual > 0 ? formatCurrency(project.actual) : '-'}</td>
+                                                                    <td className={`px-4 py-2.5 text-right font-mono ${project.outstanding_balance > 0 ? 'text-orange-400 font-bold' : 'text-slate-500'}`}>
+                                                                        {project.outstanding_balance > 0 ? `Pending: ${formatCurrency(project.outstanding_balance)}` : 'Settled ✅'}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {/* Source Breakdown Table */}
+                    {/* Source Breakdown Table (Collapsible, Collapsed by Default) */}
                     <div className={darkTheme.card + " p-6"}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className={darkTheme.subtitle}>Source Breakdown</h2>
-                            <select
-                                value={sourceBreakdownType}
-                                onChange={(e) => setSourceBreakdownType(e.target.value as any)}
-                                className="bg-slate-900 text-sm text-slate-200 border border-slate-700 rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                            >
-                                <option value="income">💵 Income (Client → Category)</option>
-                                <option value="expense">💸 Expense (Account → Category)</option>
-                                <option value="transfer">🔄 Transfer (Account → Destination)</option>
-                            </select>
+                        <div 
+                            className="flex justify-between items-center cursor-pointer select-none mb-2"
+                            onClick={() => setIsSourceBreakdownCollapsed(!isSourceBreakdownCollapsed)}
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="text-blue-400 font-bold text-sm">
+                                    {isSourceBreakdownCollapsed ? '▶' : '▼'}
+                                </span>
+                                <h2 className={darkTheme.subtitle}>Source Breakdown</h2>
+                            </div>
+
+                            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                    value={sourceBreakdownType}
+                                    onChange={(e) => setSourceBreakdownType(e.target.value as any)}
+                                    className="bg-slate-900 text-xs text-slate-200 border border-slate-700 rounded px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                >
+                                    <option value="income">💵 Income (Client → Category)</option>
+                                    <option value="expense">💸 Expense (Account → Category)</option>
+                                    <option value="transfer">🔄 Transfer (Account → Destination)</option>
+                                </select>
+                                <button 
+                                    onClick={() => setIsSourceBreakdownCollapsed(!isSourceBreakdownCollapsed)}
+                                    className="text-xs text-slate-300 font-bold bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-3 py-1 rounded-lg border border-blue-500/30 transition-all"
+                                >
+                                    {isSourceBreakdownCollapsed ? 'Expand 📂' : 'Collapse 📁'}
+                                </button>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto bg-slate-900/40 rounded-xl border border-slate-700/50">
-                            <table className="w-full text-xs text-left">
-                                <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
-                                    <tr>
-                                        <th className="px-4 py-3">Source</th>
-                                        <th className="px-4 py-3">Category / Destination</th>
-                                        <th className="px-4 py-3 text-right">Count</th>
-                                        <th className="px-4 py-3 text-right">Total Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-800">
-                                    {sourceCategoryBreakdown
-                                        .filter(item => item.direction === sourceBreakdownType)
-                                        .map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                                                <td className="px-4 py-3 font-semibold text-slate-200">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className={`w-1.5 h-1.5 rounded-full ${
-                                                            item.direction === 'income' ? 'bg-green-500' : 
-                                                            item.direction === 'expense' ? 'bg-red-500' : 'bg-blue-500'
-                                                        }`}></div>
-                                                        {item.source_name}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-400 font-medium">{item.category_name}</td>
-                                                <td className="px-4 py-3 text-right text-slate-500 font-mono italic">{item.count}tx</td>
-                                                <td className={`px-4 py-3 text-right font-bold font-mono ${
-                                                    item.direction === 'income' ? 'text-green-400' : 
-                                                    item.direction === 'expense' ? 'text-red-400' : 'text-blue-400'
-                                                }`}>
-                                                    {formatCurrency(item.total)}
+
+                        {!isSourceBreakdownCollapsed && (
+                            <div className="mt-4 overflow-x-auto bg-slate-900/40 rounded-xl border border-slate-700/50">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="bg-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                        <tr>
+                                            <th className="px-4 py-3">Source</th>
+                                            <th className="px-4 py-3">Category / Destination</th>
+                                            <th className="px-4 py-3 text-right">Count</th>
+                                            <th className="px-4 py-3 text-right">Total Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                        {sourceCategoryBreakdown
+                                            .filter(item => item.direction === sourceBreakdownType)
+                                            .map((item, idx) => (
+                                                <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
+                                                    <td className="px-4 py-3 font-semibold text-slate-200">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${
+                                                                item.direction === 'income' ? 'bg-green-500' : 
+                                                                item.direction === 'expense' ? 'bg-red-500' : 'bg-blue-500'
+                                                            }`}></div>
+                                                            {item.source_name}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-slate-400 font-medium">{item.category_name}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-500 font-mono italic">{item.count}tx</td>
+                                                    <td className={`px-4 py-3 text-right font-bold font-mono ${
+                                                        item.direction === 'income' ? 'text-green-400' : 
+                                                        item.direction === 'expense' ? 'text-red-400' : 'text-blue-400'
+                                                    }`}>
+                                                        {formatCurrency(item.total)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        {sourceCategoryBreakdown.filter(item => item.direction === sourceBreakdownType).length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="px-4 py-12 text-center text-slate-500 italic bg-slate-900/20">
+                                                    No breakdown data for the selected type and filters.
                                                 </td>
                                             </tr>
-                                        ))}
-                                    {sourceCategoryBreakdown.filter(item => item.direction === sourceBreakdownType).length === 0 && (
-                                        <tr>
-                                            <td colSpan={4} className="px-4 py-12 text-center text-slate-500 italic bg-slate-900/20">
-                                                No breakdown data for the selected type and filters.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
 
                     {/* Report Summary */}

@@ -316,18 +316,67 @@ pub fn get_overall_stats(db: State<DbConnection>, filters: ReportFilters) -> Res
 pub fn get_project_income_report(
     db: State<DbConnection>,
     year: i32,
+    filters: Option<ReportFilters>,
 ) -> Result<Vec<ProjectIncomeSummary>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    
-    // 1. Get all relevant months
-    let mut months_stmt = conn.prepare("
-        SELECT DISTINCT strftime('%Y-%m', date) as m FROM transactions WHERE strftime('%Y', date) = ?1
-        UNION
-        SELECT DISTINCT strftime('%Y-%m', end_date) as m FROM projects WHERE strftime('%Y', end_date) = ?1
-        ORDER BY m
-    ").map_err(|e| e.to_string())?;
-    
-    let months: Vec<String> = months_stmt.query_map([year.to_string()], |row| row.get(0))
+    let f = filters.unwrap_or_default();
+
+    let start_m = f.start_date.as_ref().map(|s| if s.len() >= 7 { s[0..7].to_string() } else { s.clone() });
+    let end_m = f.end_date.as_ref().map(|s| if s.len() >= 7 { s[0..7].to_string() } else { s.clone() });
+
+    // 1. Get all relevant months matching filters or year
+    let mut months_query = String::from("
+        SELECT DISTINCT strftime('%Y-%m', date) as m FROM transactions t WHERE 1=1
+    ");
+    let mut months_params: Vec<rusqlite::types::Value> = vec![];
+
+    if let Some(start) = &f.start_date {
+        months_query.push_str(" AND t.date >= ?");
+        months_params.push(start.clone().into());
+    }
+    if let Some(end) = &f.end_date {
+        months_query.push_str(" AND t.date <= ?");
+        months_params.push(end.clone().into());
+    }
+    if f.start_date.is_none() && f.end_date.is_none() {
+        months_query.push_str(" AND strftime('%Y', t.date) = ?");
+        months_params.push(year.to_string().into());
+    }
+    if let Some(cid) = f.client_id {
+        months_query.push_str(" AND t.client_id = ?");
+        months_params.push(cid.into());
+    }
+    if let Some(pid) = f.project_id {
+        months_query.push_str(" AND t.project_id = ?");
+        months_params.push(pid.into());
+    }
+
+    months_query.push_str(" UNION SELECT DISTINCT strftime('%Y-%m', end_date) as m FROM projects p WHERE 1=1 ");
+    if let Some(sm) = &start_m {
+        months_query.push_str(" AND strftime('%Y-%m', p.end_date) >= ?");
+        months_params.push(sm.clone().into());
+    }
+    if let Some(em) = &end_m {
+        months_query.push_str(" AND strftime('%Y-%m', p.end_date) <= ?");
+        months_params.push(em.clone().into());
+    }
+    if f.start_date.is_none() && f.end_date.is_none() {
+        months_query.push_str(" AND strftime('%Y', p.end_date) = ?");
+        months_params.push(year.to_string().into());
+    }
+    if let Some(cid) = f.client_id {
+        months_query.push_str(" AND p.client_id = ?");
+        months_params.push(cid.into());
+    }
+    if let Some(pid) = f.project_id {
+        months_query.push_str(" AND p.id = ?");
+        months_params.push(pid.into());
+    }
+
+    months_query.push_str(" ORDER BY m");
+
+    let mut months_stmt = conn.prepare(&months_query).map_err(|e| e.to_string())?;
+    let months: Vec<String> = months_stmt.query_map(rusqlite::params_from_iter(months_params), |row| row.get(0))
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<String>, _>>()
         .map_err(|e| e.to_string())?;
@@ -335,49 +384,50 @@ pub fn get_project_income_report(
     let mut report = Vec::new();
 
     for month in months {
-        let _month_end = format!("{}-31", month); // Simplified end of month for comparison
-
-        // Get details for all projects active in or before this month that have non-zero balance or activity
-        let mut detail_stmt = conn.prepare("
+        let mut detail_query = String::from("
             WITH project_metrics AS (
                 SELECT 
                     p.id,
                     p.name,
-                    -- Total expected for the project
                     p.expected_amount as total_expected,
-                    -- Actual in this specific month
                     COALESCE((
                         SELECT SUM(amount) 
                         FROM transactions 
                         WHERE project_id = p.id AND direction = 'income' AND strftime('%Y-%m', date) = ?1
                     ), 0) as monthly_actual,
-                    -- Actual received BEFORE this month
                     COALESCE((
                         SELECT SUM(amount) 
                         FROM transactions 
                         WHERE project_id = p.id AND direction = 'income' AND strftime('%Y-%m', date) < ?1
                     ), 0) as prior_actual,
-                    -- Actual received UP TO AND INCLUDING this month
                     COALESCE((
                         SELECT SUM(amount) 
                         FROM transactions 
                         WHERE project_id = p.id AND direction = 'income' AND strftime('%Y-%m', date) <= ?1
                     ), 0) as cumulative_actual,
-                    -- Is the deadline in this month?
                     strftime('%Y-%m', p.end_date) = ?1 as is_deadline_month,
-                    -- Has the deadline passed?
                     strftime('%Y-%m', p.end_date) < ?1 as is_past_deadline
                 FROM projects p
-                -- Only consider projects that have some activity or deadine in/before this month
-                WHERE strftime('%Y-%m', p.end_date) <= ?1
-                   OR EXISTS (SELECT 1 FROM transactions WHERE project_id = p.id AND strftime('%Y-%m', date) <= ?1)
+                WHERE (strftime('%Y-%m', p.end_date) <= ?1
+                   OR EXISTS (SELECT 1 FROM transactions WHERE project_id = p.id AND strftime('%Y-%m', date) <= ?1))
+        ");
+
+        let mut detail_params: Vec<rusqlite::types::Value> = vec![month.clone().into()];
+
+        if let Some(cid) = f.client_id {
+            detail_query.push_str(" AND p.client_id = ?");
+            detail_params.push(cid.into());
+        }
+        if let Some(pid) = f.project_id {
+            detail_query.push_str(" AND p.id = ?");
+            detail_params.push(pid.into());
+        }
+
+        detail_query.push_str("
             )
             SELECT 
                 id,
                 name,
-                -- The 'Expected' for this month:
-                -- 1. If it's the deadline month OR past deadline: remaining balance (total - what was paid before this month)
-                -- 2. Else: 0
                 CASE 
                     WHEN is_deadline_month OR is_past_deadline THEN MAX(0, total_expected - prior_actual)
                     ELSE 0 
@@ -386,9 +436,10 @@ pub fn get_project_income_report(
                 (total_expected - cumulative_actual) as outstanding
             FROM project_metrics
             WHERE current_expected > 0 OR monthly_actual > 0 OR outstanding != 0
-        ").map_err(|e| e.to_string())?;
+        ");
 
-        let projects = detail_stmt.query_map([&month], |row| {
+        let mut detail_stmt = conn.prepare(&detail_query).map_err(|e| e.to_string())?;
+        let projects = detail_stmt.query_map(rusqlite::params_from_iter(detail_params), |row| {
             Ok(ProjectDetail {
                 project_id: row.get(0)?,
                 project_name: row.get(1)?,
@@ -400,15 +451,17 @@ pub fn get_project_income_report(
         .collect::<Result<Vec<ProjectDetail>, _>>()
         .map_err(|e| e.to_string())?;
 
-        let actual_total: f64 = projects.iter().map(|p| p.actual).sum();
-        let expected_total: f64 = projects.iter().map(|p| p.expected).sum();
+        if !projects.is_empty() {
+            let actual_total: f64 = projects.iter().map(|p| p.actual).sum();
+            let expected_total: f64 = projects.iter().map(|p| p.expected).sum();
 
-        report.push(ProjectIncomeSummary {
-            month,
-            actual_income: actual_total,
-            expected_income: expected_total,
-            projects,
-        });
+            report.push(ProjectIncomeSummary {
+                month,
+                actual_income: actual_total,
+                expected_income: expected_total,
+                projects,
+            });
+        }
     }
     
     Ok(report)

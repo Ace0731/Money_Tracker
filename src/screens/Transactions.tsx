@@ -5,6 +5,19 @@ import type { TransactionWithDetails, TransactionBalances } from '../types/trans
 import { formatCurrency, formatDate, getDirectionColor } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 
 export default function Transactions() {
@@ -18,6 +31,7 @@ export default function Transactions() {
     const [showBalances, setShowBalances] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [viewOnly, setViewOnly] = useState(false);
+    const [chartCategoryDirection, setChartCategoryDirection] = useState<'expense' | 'income' | 'transfer'>('expense');
 
     const [filters, setFilters] = useState<{
         start_date: string;
@@ -232,7 +246,141 @@ export default function Transactions() {
                 </button>
             </div>
 
+            {/* Transactions Visual Overview Charts Grid */}
+            {transactions.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    {/* Direction Distribution Donut Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-2">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Transaction Cash Flow</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Income vs Expense vs Transfer</p>
+                            </div>
+                            <span className="text-xl">💳</span>
+                        </div>
 
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={[
+                                            { name: 'Income', value: transactions.filter(t => t.direction === 'income').reduce((s, t) => s + t.amount, 0), color: '#10b981' },
+                                            { name: 'Expense', value: transactions.filter(t => t.direction === 'expense').reduce((s, t) => s + t.amount, 0), color: '#f43f5e' },
+                                            { name: 'Transfer', value: transactions.filter(t => t.direction === 'transfer').reduce((s, t) => s + t.amount, 0), color: '#3b82f6' },
+                                        ].filter(d => d.value > 0)}
+                                        innerRadius={50}
+                                        outerRadius={75}
+                                        paddingAngle={4}
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {[
+                                            { color: '#10b981' },
+                                            { color: '#f43f5e' },
+                                            { color: '#3b82f6' }
+                                        ].map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [formatCurrency(val), 'Volume']}
+                                    />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Top Categories Bar Chart (Switchable between Expense, Income, and Transfer) */}
+                    <div className={darkTheme.card + " p-6 lg:col-span-2"}>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                                    {chartCategoryDirection === 'expense' ? 'Top Category Spending' : chartCategoryDirection === 'income' ? 'Top Income Categories' : 'Top Transfer Destinations'}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    {chartCategoryDirection === 'expense' ? 'Highest expense categories in current view' : chartCategoryDirection === 'income' ? 'Highest income sources/categories in current view' : 'Highest transfer targets in current view'}
+                                </p>
+                            </div>
+
+                            {/* Tab Switcher Controls */}
+                            <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-700/60">
+                                <button
+                                    onClick={() => setChartCategoryDirection('expense')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                        chartCategoryDirection === 'expense'
+                                            ? 'bg-rose-600 text-white shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    💸 Expense
+                                </button>
+                                <button
+                                    onClick={() => setChartCategoryDirection('income')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                        chartCategoryDirection === 'income'
+                                            ? 'bg-emerald-600 text-white shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    💵 Income
+                                </button>
+                                <button
+                                    onClick={() => setChartCategoryDirection('transfer')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                        chartCategoryDirection === 'transfer'
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-200'
+                                    }`}
+                                >
+                                    🔄 Transfer
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                    data={(() => {
+                                        const catTotals: Record<string, number> = {};
+                                        transactions
+                                            .filter(t => t.direction === chartCategoryDirection)
+                                            .forEach(t => {
+                                                const name = t.category_name || (chartCategoryDirection === 'transfer' ? (t.to_account_name || 'Transfer') : 'Uncategorized');
+                                                catTotals[name] = (catTotals[name] || 0) + t.amount;
+                                            });
+                                        return Object.entries(catTotals)
+                                            .sort((a, b) => b[1] - a[1])
+                                            .slice(0, 7)
+                                            .map(([name, total]) => ({
+                                                name: name.length > 14 ? name.substring(0, 14) + '...' : name,
+                                                Amount: total
+                                            }));
+                                    })()}
+                                    margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#64748b" fontSize={10} />
+                                    <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [
+                                            formatCurrency(val),
+                                            chartCategoryDirection === 'expense' ? 'Total Expense' : chartCategoryDirection === 'income' ? 'Total Income' : 'Total Transferred'
+                                        ]}
+                                    />
+                                    <Bar
+                                        dataKey="Amount"
+                                        fill={chartCategoryDirection === 'expense' ? '#f43f5e' : chartCategoryDirection === 'income' ? '#10b981' : '#3b82f6'}
+                                        radius={[4, 4, 0, 0]}
+                                    />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Balance Table */}
             <div className={darkTheme.card + " mb-6 overflow-hidden"}>

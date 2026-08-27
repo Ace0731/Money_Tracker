@@ -4,6 +4,19 @@ import type { Project, Client, Category, TimeLog, ProjectPayment } from '../type
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 export default function Projects() {
     const { execute, loading } = useDatabase();
@@ -374,6 +387,93 @@ export default function Projects() {
                                 {overallEfficiency.toFixed(1)}%
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1">Realized vs target rate</div>
+                        </div>
+                    </div>
+
+                    {/* Project Visual Charts Row */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Top Projects Financials Bar Chart */}
+                        <div className={darkTheme.card + " p-6 lg:col-span-2"}>
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Project Financial Performance</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Received Income vs Effort Cost (Top Projects)</p>
+                                </div>
+                                <span className="text-xl">📊</span>
+                            </div>
+
+                            <div className="h-[280px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                        data={projects.slice(0, 8).map(p => {
+                                            const effortCost = (p.logged_hours || 0) * (p.hourly_rate || 0);
+                                            return {
+                                                name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
+                                                Received: p.received_amount || 0,
+                                                'Effort Cost': effortCost,
+                                                Expected: p.expected_amount || 0
+                                            };
+                                        })}
+                                        margin={{ top: 20, right: 30, left: 10, bottom: 5 }}
+                                    >
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                        <XAxis dataKey="name" stroke="#64748b" fontSize={10} />
+                                        <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                            formatter={(val: any) => [formatCurrency(val), '']}
+                                        />
+                                        <Legend />
+                                        <Bar dataKey="Received" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="Effort Cost" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Project Status Breakdown Donut Chart */}
+                        <div className={darkTheme.card + " p-6"}>
+                            <div className="flex justify-between items-center mb-2">
+                                <div>
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Project Portfolio Status</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Distribution across project stages</p>
+                                </div>
+                                <span className="text-xl">🎯</span>
+                            </div>
+
+                            <div className="h-[240px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={[
+                                                { name: 'Active', value: projects.filter(p => p.status === 'active').length, color: '#3b82f6' },
+                                                { name: 'Completed', value: projects.filter(p => p.status === 'completed').length, color: '#10b981' },
+                                                { name: 'Prospect', value: projects.filter(p => p.status === 'prospect').length, color: '#a855f7' },
+                                                { name: 'On-Hold', value: projects.filter(p => p.status === 'on_hold').length, color: '#eab308' },
+                                            ].filter(d => d.value > 0)}
+                                            innerRadius={55}
+                                            outerRadius={85}
+                                            paddingAngle={4}
+                                            dataKey="value"
+                                            stroke="none"
+                                        >
+                                            {[
+                                                { color: '#3b82f6' },
+                                                { color: '#10b981' },
+                                                { color: '#a855f7' },
+                                                { color: '#eab308' }
+                                            ].map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                            formatter={(val: any) => [`${val} Projects`, 'Count']}
+                                        />
+                                        <Legend iconType="circle" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
                     </div>
 

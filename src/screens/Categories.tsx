@@ -3,6 +3,19 @@ import Swal from 'sweetalert2';
 import { useDatabase } from '../hooks/useDatabase';
 import type { Category } from '../types';
 import { darkTheme } from '../utils/theme';
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 export default function Categories() {
     const { execute, loading } = useDatabase();
@@ -76,6 +89,88 @@ export default function Categories() {
             </div>
 
             {loading && <div className={darkTheme.loading}>Loading...</div>}
+
+            {/* Categories Visual Overview Charts Grid */}
+            {categories.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                    {/* Kind Distribution Donut Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-2">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Category Classification</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Income vs Expense vs Transfer</p>
+                            </div>
+                            <span className="text-xl">🏷️</span>
+                        </div>
+
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={[
+                                            { name: 'Income', value: categories.filter(c => c.kind === 'income').length, color: '#10b981' },
+                                            { name: 'Expense', value: categories.filter(c => c.kind === 'expense').length, color: '#f43f5e' },
+                                            { name: 'Transfer', value: categories.filter(c => c.kind === 'transfer').length, color: '#3b82f6' },
+                                        ].filter(d => d.value > 0)}
+                                        innerRadius={50}
+                                        outerRadius={75}
+                                        paddingAngle={4}
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {[
+                                            { color: '#10b981' },
+                                            { color: '#f43f5e' },
+                                            { color: '#3b82f6' }
+                                        ].map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [`${val} Categories`, 'Count']}
+                                    />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Category Flags Bar Chart */}
+                    <div className={darkTheme.card + " p-6 lg:col-span-2"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Special Category Badges</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Taxable, Investment, and Budgeted Categories</p>
+                            </div>
+                            <span className="text-xl">📊</span>
+                        </div>
+
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                    data={[
+                                        { name: '🏷️ Taxable', Count: categories.filter(c => c.include_in_tax).length },
+                                        { name: '📈 Investment', Count: categories.filter(c => c.is_investment).length },
+                                        { name: '⏱️ Breakdown', Count: categories.filter(c => c.include_in_income_breakdown).length },
+                                        { name: '✓ Budgeted', Count: categories.filter(c => c.include_in_budget !== false && c.kind === 'expense').length },
+                                    ]}
+                                    margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#64748b" fontSize={11} />
+                                    <YAxis stroke="#64748b" fontSize={10} allowDecimals={false} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [`${val} Categories`, 'Count']}
+                                    />
+                                    <Bar dataKey="Count" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="space-y-6">
                 {/* Income Categories */}

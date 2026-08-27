@@ -4,6 +4,19 @@ import { formatCurrency, getFiscalYearRange } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import type { IncomeBreakdownItem, CategoryHour, Category } from '../types';
 import Swal from 'sweetalert2';
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 export default function IncomeBreakdown() {
     const { execute } = useDatabase();
@@ -250,6 +263,84 @@ export default function IncomeBreakdown() {
                     <div className="text-3xl font-bold text-blue-400">{formatCurrency(avgRate)}/hr</div>
                 </div>
             </div>
+
+            {/* Income Breakdown Charts Grid */}
+            {breakdown.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    {/* Category Income Share Pie Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Income Category Distribution</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Share of total income by category</p>
+                            </div>
+                            <span className="text-xl">🍰</span>
+                        </div>
+
+                        <div className="h-[260px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={breakdown.map((item, idx) => ({
+                                            name: item.category_name,
+                                            value: item.income,
+                                            color: ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#14b8a6'][idx % 6]
+                                        }))}
+                                        innerRadius={50}
+                                        outerRadius={80}
+                                        paddingAngle={4}
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {breakdown.map((_, index) => (
+                                            <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#14b8a6'][index % 6]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [formatCurrency(val), 'Income']}
+                                    />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Effective Hourly Rate Comparison Bar Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Effective Hourly Rate Comparison</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Realized rate (₹/hr) across categories</p>
+                            </div>
+                            <span className="text-xl">⏱️</span>
+                        </div>
+
+                        <div className="h-[260px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                    data={breakdown.map(item => ({
+                                        name: item.category_name.length > 12 ? item.category_name.substring(0, 12) + '...' : item.category_name,
+                                        'Hourly Rate': item.hourly_rate,
+                                        Hours: item.hours
+                                    }))}
+                                    margin={{ top: 20, right: 20, left: 10, bottom: 5 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#64748b" fontSize={10} />
+                                    <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${v}`} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any, name: any) => [name === 'Hourly Rate' ? `${formatCurrency(val)}/hr` : `${val}h`, name]}
+                                    />
+                                    <Legend />
+                                    <Bar dataKey="Hourly Rate" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Breakdown List */}
             <div className="space-y-6">

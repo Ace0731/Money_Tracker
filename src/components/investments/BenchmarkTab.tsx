@@ -1,13 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../../hooks/useDatabase';
 import { formatCurrency } from '../../utils/formatters';
 import Swal from 'sweetalert2';
+import {
+    ResponsiveContainer,
+    AreaChart,
+    Area,
+    BarChart,
+    Bar,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 export default function BenchmarkTab({ report, refreshData }: { report: any, refreshData: () => void }) {
     const { execute } = useDatabase();
     const [showSettings, setShowSettings] = useState(false);
     const [targetAmount, setTargetAmount] = useState(report?.benchmark?.target_amount || 10000);
     const [startDate, setStartDate] = useState(report?.benchmark?.start_date || new Date().toISOString().split('T')[0]);
+    const [chartMode, setChartMode] = useState<'cumulative' | 'monthly'>('cumulative');
 
     const handleSaveBenchmark = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -34,6 +48,28 @@ export default function BenchmarkTab({ report, refreshData }: { report: any, ref
             });
         }
     };
+
+    // Prepare chart data with cumulative totals & gaps
+    const chartData = useMemo(() => {
+        if (!report || !report.monthly_data) return [];
+        let cumTarget = 0;
+        let cumActual = 0;
+
+        return report.monthly_data.map((m: any) => {
+            cumTarget += m.target;
+            cumActual += m.actual;
+            const gap = m.actual - m.target;
+            return {
+                month: m.label,
+                'Monthly Target': m.target,
+                'Monthly Actual': m.actual,
+                'Cumulative Target': cumTarget,
+                'Cumulative Actual': cumActual,
+                Gap: gap,
+                isMet: gap >= 0
+            };
+        });
+    }, [report]);
 
     if (!report || !report.benchmark) {
         return (
@@ -70,6 +106,10 @@ export default function BenchmarkTab({ report, refreshData }: { report: any, ref
         );
     }
 
+    const metMonthsCount = chartData.filter((d: any) => d.isMet).length;
+    const totalMonthsCount = chartData.length;
+    const consistencyRate = totalMonthsCount > 0 ? ((metMonthsCount / totalMonthsCount) * 100).toFixed(0) : '0';
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center bg-slate-800 p-6 rounded-xl border border-slate-700">
@@ -82,7 +122,7 @@ export default function BenchmarkTab({ report, refreshData }: { report: any, ref
                 </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
                     <div className="text-sm text-slate-400">Total Cumulative Target</div>
                     <div className="text-2xl font-bold text-slate-100">{formatCurrency(report.total_target)}</div>
@@ -99,6 +139,91 @@ export default function BenchmarkTab({ report, refreshData }: { report: any, ref
                             ({report.total_gap >= 0 ? 'Surplus' : 'Deficit'})
                         </span>
                     </div>
+                </div>
+                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
+                    <div className="text-sm text-slate-400">Consistency Rate</div>
+                    <div className="text-2xl font-bold text-cyan-400">
+                        {consistencyRate}% <span className="text-xs text-slate-500 font-normal">({metMonthsCount}/{totalMonthsCount} months met)</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Interactive Benchmark Graphs Card */}
+            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/60 pb-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-100">Benchmark Performance Graphs</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Visualize cumulative wealth trajectory & monthly surplus/deficit trends</p>
+                    </div>
+
+                    <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-700/60">
+                        <button
+                            onClick={() => setChartMode('cumulative')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                chartMode === 'cumulative'
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                        >
+                            📈 Cumulative Trajectory
+                        </button>
+                        <button
+                            onClick={() => setChartMode('monthly')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                chartMode === 'monthly'
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                        >
+                            📊 Monthly Target vs Actual
+                        </button>
+                    </div>
+                </div>
+
+                <div className="h-[340px] pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                        {chartMode === 'cumulative' ? (
+                            <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
+                                <defs>
+                                    <linearGradient id="gradTarget" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
+                                    </linearGradient>
+                                    <linearGradient id="gradActual" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
+                                <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                    formatter={(val: any) => [formatCurrency(val), '']}
+                                />
+                                <Legend />
+                                <Area type="monotone" dataKey="Cumulative Target" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#gradTarget)" />
+                                <Area type="monotone" dataKey="Cumulative Actual" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#gradActual)" />
+                            </AreaChart>
+                        ) : (
+                            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
+                                <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                    formatter={(val: any) => [formatCurrency(val), '']}
+                                />
+                                <Legend />
+                                <Bar dataKey="Monthly Target" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="Monthly Actual" radius={[4, 4, 0, 0]}>
+                                    {chartData.map((entry: any, index: number) => (
+                                        <Cell key={`cell-${index}`} fill={entry.isMet ? '#10b981' : '#f43f5e'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        )}
+                    </ResponsiveContainer>
                 </div>
             </div>
 

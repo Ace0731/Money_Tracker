@@ -4,10 +4,24 @@ import type { Account } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { darkTheme } from '../utils/theme';
 import Swal from 'sweetalert2';
+import {
+    ResponsiveContainer,
+    LineChart,
+    Line,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend
+} from 'recharts';
 
 export default function Accounts() {
     const { execute, loading } = useDatabase();
     const [accounts, setAccounts] = useState<Account[]>([]);
+    const [transactions, setTransactions] = useState<any[]>([]);
     const [expandedAccounts, setExpandedAccounts] = useState<Set<number>>(new Set());
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState<Account>({
@@ -26,10 +40,14 @@ export default function Accounts() {
 
     const loadAccounts = async () => {
         try {
-            const data = await execute<Account[]>('get_accounts');
-            setAccounts(data);
+            const [accData, txData] = await Promise.all([
+                execute<Account[]>('get_accounts'),
+                execute<any[]>('get_transactions')
+            ]);
+            setAccounts(accData);
+            setTransactions(txData || []);
         } catch (error) {
-            console.error('Failed to load accounts:', error);
+            console.error('Failed to load accounts data:', error);
         }
     };
 
@@ -52,6 +70,62 @@ export default function Accounts() {
 
         return { physicalAccounts: physical, independentBuckets: independent, bucketsByParent: byParent };
     }, [accounts]);
+
+    // Timeline logic for all accounts + overall total points
+    const timelineData = useMemo(() => {
+        if (!accounts.length) return [];
+        const physical = accounts.filter(a => a.account_type !== 'bucket');
+        
+        const monthSet = new Set<string>();
+        transactions.forEach(t => {
+            if (t.date && t.date.length >= 7) {
+                monthSet.add(t.date.substring(0, 7));
+            }
+        });
+        
+        const sortedMonths = Array.from(monthSet).sort();
+        if (sortedMonths.length === 0) {
+            sortedMonths.push(new Date().toISOString().substring(0, 7));
+        }
+
+        const txsByMonth: Record<string, any[]> = {};
+        transactions.forEach(t => {
+            const m = t.date ? t.date.substring(0, 7) : '';
+            if (m) {
+                if (!txsByMonth[m]) txsByMonth[m] = [];
+                txsByMonth[m].push(t);
+            }
+        });
+
+        const runningBalances: Record<number, number> = {};
+        physical.forEach(a => {
+            runningBalances[a.id!] = a.opening_balance || 0;
+        });
+
+        return sortedMonths.map(month => {
+            const monthTxs = txsByMonth[month] || [];
+            monthTxs.forEach(t => {
+                if (t.to_account_id && runningBalances[t.to_account_id] !== undefined) {
+                    runningBalances[t.to_account_id] += t.amount;
+                }
+                if (t.from_account_id && runningBalances[t.from_account_id] !== undefined) {
+                    runningBalances[t.from_account_id] -= t.amount;
+                }
+            });
+
+            const point: Record<string, any> = { month };
+            let overallTotal = 0;
+
+            physical.forEach(a => {
+                const bal = runningBalances[a.id!] || 0;
+                point[a.name] = Math.round(bal * 100) / 100;
+                overallTotal += bal;
+            });
+
+            point['Overall Total'] = Math.round(overallTotal * 100) / 100;
+            return point;
+        });
+    }, [accounts, transactions]);
 
     const toggleExpand = (id: number) => {
         const newSet = new Set(expandedAccounts);
@@ -271,6 +345,106 @@ export default function Accounts() {
                     Add Account
                 </button>
             </div>
+
+            {/* Accounts Visual Overview Charts Grid */}
+            {physicalAccounts.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                    {/* Account Liquidity Share Donut Chart */}
+                    <div className={darkTheme.card + " p-6"}>
+                        <div className="flex justify-between items-center mb-2">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Liquidity Distribution</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Balance share across physical accounts</p>
+                            </div>
+                            <span className="text-xl">🏦</span>
+                        </div>
+
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={physicalAccounts.map((acc, idx) => ({
+                                            name: acc.name,
+                                            value: acc.current_balance ?? acc.opening_balance,
+                                            color: ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899'][idx % 5]
+                                        })).filter(d => d.value > 0)}
+                                        innerRadius={50}
+                                        outerRadius={75}
+                                        paddingAngle={4}
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {physicalAccounts.map((_, index) => (
+                                            <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899'][index % 5]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any) => [formatCurrency(val), 'Current Balance']}
+                                    />
+                                    <Legend iconType="circle" />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* All Accounts Multi-Line Timeline Chart with Overall Points */}
+                    <div className={darkTheme.card + " p-6 lg:col-span-2"}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-white uppercase tracking-wider">All Accounts Timeline</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Individual account balance curves & overall portfolio points</p>
+                            </div>
+                            <span className="text-xl">📈</span>
+                        </div>
+
+                        <div className="h-[220px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart
+                                    data={timelineData}
+                                    margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                    <XAxis dataKey="month" stroke="#64748b" fontSize={10} />
+                                    <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px' }}
+                                        formatter={(val: any, name: any) => [formatCurrency(val), name]}
+                                    />
+                                    <Legend iconType="circle" />
+                                    
+                                    {/* Individual Physical Account Lines */}
+                                    {physicalAccounts.map((acc, idx) => {
+                                        const colors = ['#3b82f6', '#10b981', '#a855f7', '#ec4899', '#14b8a6', '#06b6d4'];
+                                        return (
+                                            <Line
+                                                key={acc.id}
+                                                type="monotone"
+                                                dataKey={acc.name}
+                                                stroke={colors[idx % colors.length]}
+                                                strokeWidth={2}
+                                                dot={{ r: 3 }}
+                                                activeDot={{ r: 6 }}
+                                            />
+                                        );
+                                    })}
+
+                                    {/* Prominent Overall Total Line with Timeline Points */}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="Overall Total"
+                                        stroke="#f59e0b"
+                                        strokeWidth={3}
+                                        strokeDasharray="4 2"
+                                        dot={{ r: 5, fill: '#f59e0b', stroke: '#ffffff', strokeWidth: 1.5 }}
+                                        activeDot={{ r: 8, fill: '#f59e0b' }}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {loading && <div className={darkTheme.loading}>Loading accounts...</div>}
 
